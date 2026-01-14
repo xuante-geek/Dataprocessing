@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local inputs/outputs
+input/*.xlsx
+input/*.xls
+docs/data/*.csv
+logs/

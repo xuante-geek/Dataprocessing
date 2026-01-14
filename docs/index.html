@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DataProcessing - Excel 转 CSV</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">功能 1</p>
+        <h1>Excel 转 CSV</h1>
+        <p class="subhead">
+          从 <span class="path">input</span> 选择 Excel 文件，导出 CSV 到
+          <span class="path">docs/data</span>。
+        </p>
+      </header>
+
+      <section class="panel">
+        <div class="control">
+          <label for="file-select">输入文件</label>
+          <div class="select-wrap">
+            <select id="file-select" aria-label="Excel 文件"></select>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="convert" type="button" class="primary">确认并导出 CSV</button>
+          <span id="status" class="status" aria-live="polite"></span>
+        </div>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-card">
+        <h2 id="modal-title"></h2>
+        <p id="modal-message"></p>
+        <button id="modal-close" type="button" class="primary">知道了</button>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
