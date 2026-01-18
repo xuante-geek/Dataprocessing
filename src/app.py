@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from bisect import bisect_left, insort
+from collections import deque
 import csv
 import datetime as dt
 import math
 import os
 from pathlib import Path
 from typing import Iterable
-from bisect import bisect_left, insort
 
 from flask import Flask, jsonify, request
 
@@ -493,11 +494,13 @@ def _rolling_stddevp(sum_values: float, sum_squares: float, size: int) -> float:
     return math.sqrt(variance)
 
 
-def _compute_erp_10year_bands(
+def _compute_erp_rolling_bands(
     erp_rows: list[list[object]],
     *,
     window_size: int = 2000,
 ) -> list[list[object]]:
+    if not isinstance(window_size, int) or window_size <= 0:
+        raise ValueError("滚动窗口 n 必须为正整数")
     if not erp_rows or len(erp_rows) < 2:
         raise ValueError("ERP 数据为空")
 
@@ -514,7 +517,7 @@ def _compute_erp_10year_bands(
     ]
 
     sorted_window: list[float] = []
-    queue: list[float] = []
+    queue: deque[float] = deque()
     sum_values = 0.0
     sum_squares = 0.0
 
@@ -530,7 +533,7 @@ def _compute_erp_10year_bands(
         sum_squares += erp_float * erp_float
 
         if len(queue) > window_size:
-            leaving = queue.pop(0)
+            leaving = queue.popleft()
             sum_values -= leaving
             sum_squares -= leaving * leaving
             remove_index = bisect_left(sorted_window, leaving)
@@ -671,7 +674,7 @@ def generate_erp_10year() -> object:
         merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
         erp_rows = _compute_erp_rows(merged_rows, bond_rows)
 
-        bands_rows = _compute_erp_10year_bands(erp_rows, window_size=2000)
+        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=2000)
 
         csv_name = "ERP_10Year.csv"
         xlsx_name = "ERP_10Year.xlsx"
@@ -679,6 +682,46 @@ def generate_erp_10year() -> object:
         _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_10Year")
 
         return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name})
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/erprolling")
+def generate_erp_rolling() -> object:
+    payload = request.get_json(silent=True) or {}
+    n = payload.get("n")
+
+    try:
+        if isinstance(n, str):
+            try:
+                n = int(n.strip())
+            except ValueError as exc:
+                raise ValueError("n 必须为整数") from exc
+        if not isinstance(n, int):
+            raise ValueError("n 必须为整数")
+        if n < 1 or n > 4000:
+            raise ValueError("n 超出范围（1-4000）")
+
+        pe_path = _find_input_xlsx("data_PE")
+        bond_path = _find_input_xlsx("data_bond")
+
+        pe_rows = _process_data_pe(pe_path)
+        bond_rows = _process_data_bond(bond_path)
+        merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
+        erp_rows = _compute_erp_rows(merged_rows, bond_rows)
+
+        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n)
+
+        csv_name = "ERP_Rolling Calculation.csv"
+        xlsx_name = "ERP_Rolling Calculation.xlsx"
+        _write_csv(bands_rows, OUTPUT_DIR / csv_name)
+        _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_Rolling Calculation")
+
+        return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name, "n": n})
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:

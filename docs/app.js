@@ -1,7 +1,8 @@
-const fileSelect = document.getElementById("file-select");
-const convertButton = document.getElementById("convert");
 const erpButton = document.getElementById("erp");
 const erp10yButton = document.getElementById("erp10y");
+const rollingButton = document.getElementById("rolling");
+const rollingNInput = document.getElementById("rolling-n");
+
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
 const modalTitle = document.getElementById("modal-title");
@@ -9,7 +10,6 @@ const modalMessage = document.getElementById("modal-message");
 const modalClose = document.getElementById("modal-close");
 
 let isBusy = false;
-let hasFiles = false;
 let isServiceAvailable = false;
 
 const setStatus = (message) => {
@@ -27,104 +27,53 @@ const hideModal = () => {
 };
 
 const updateControls = () => {
-  fileSelect.disabled = isBusy || !hasFiles;
-  convertButton.disabled = isBusy || !hasFiles;
   erpButton.disabled = isBusy || !isServiceAvailable;
   erp10yButton.disabled = isBusy || !isServiceAvailable;
+  rollingButton.disabled = isBusy || !isServiceAvailable;
+  rollingNInput.disabled = isBusy || !isServiceAvailable;
 };
 
-const setPlaceholder = (text) => {
-  fileSelect.innerHTML = "";
-  const option = document.createElement("option");
-  option.textContent = text;
-  option.value = "";
-  fileSelect.appendChild(option);
-};
-
-const loadFiles = async () => {
-  isBusy = true;
-  updateControls();
-  setStatus("正在读取 input/ 中的文件...");
-
-  try {
-    const response = await fetch("/api/files");
-    if (!response.ok) {
-      throw new Error("无法读取文件列表。");
-    }
-
-    const data = await response.json();
-    fileSelect.innerHTML = "";
-    isServiceAvailable = true;
-
-    if (!data.files || data.files.length === 0) {
-      setPlaceholder("未找到 input/ 中的 .xlsx 文件");
-      hasFiles = false;
-      setStatus("请将 Excel(.xlsx) 文件放入 input/，然后刷新页面。");
-      return;
-    }
-
-    data.files.forEach((file) => {
-      const option = document.createElement("option");
-      option.value = file;
-      option.textContent = file;
-      fileSelect.appendChild(option);
-    });
-
-    hasFiles = true;
-    setStatus(`已加载 ${data.files.length} 个文件，可以导出。`);
-  } catch (error) {
-    setPlaceholder("无法连接本地服务");
-    hasFiles = false;
+const checkService = async () => {
+  if (window.location.protocol === "file:") {
     isServiceAvailable = false;
-    setStatus("本地服务未连接（请确认已运行 python src/app.py）。");
-    const message =
-      error.message.includes("Failed to fetch") || error.message.includes("Load failed")
-        ? "请先运行本地服务：python src/app.py，然后刷新页面。"
-        : error.message;
-    showModal("读取失败", message);
-  } finally {
-    isBusy = false;
     updateControls();
-  }
-};
-
-const convertFile = async () => {
-  const filename = fileSelect.value;
-  if (!filename) {
-    showModal("未选择文件", "请选择需要转换的 Excel 文件。");
+    setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5000");
+    showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5000");
     return;
   }
 
   isBusy = true;
   updateControls();
-  setStatus("正在导出 CSV...");
+  setStatus("正在检查本地服务...");
 
   try {
-    const response = await fetch("/api/convert", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ filename }),
-    });
-
-    const data = await response.json();
+    const response = await fetch("/api/files");
     if (!response.ok) {
-      throw new Error(data.error || "导出失败。");
+      throw new Error("本地服务不可用。");
     }
-
-    setStatus("导出完成。");
-    const csvName = data.output_csv || "";
-    const xlsxName = data.output_xlsx || "";
-    const parts = [];
-    if (csvName) parts.push(`CSV：docs/data/${csvName}`);
-    if (xlsxName) parts.push(`Excel：docs/data/${xlsxName}（已冻结首行/首列）`);
-    showModal("导出完成", parts.length ? `已生成\n${parts.join("\n")}` : "已生成输出文件。");
+    isServiceAvailable = true;
+    setStatus("本地服务已连接，可以开始生成。");
   } catch (error) {
-    setStatus("导出失败。");
-    showModal("导出失败", error.message);
+    isServiceAvailable = false;
+    setStatus("本地服务未连接（请确认已运行 python src/app.py）。");
+    showModal("连接失败", "无法连接本地服务，请先运行：python src/app.py");
   } finally {
     isBusy = false;
     updateControls();
   }
+};
+
+const postJson = async (url, payload) => {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || "请求失败。");
+  }
+  return data;
 };
 
 const generateErp = async () => {
@@ -133,20 +82,13 @@ const generateErp = async () => {
   setStatus("正在生成 ERP（Feature 2）...");
 
   try {
-    const response = await fetch("/api/erp", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "生成失败。");
-    }
-
+    const data = await postJson("/api/erp");
     const outputs = data.outputs || {};
     const lines = [
       "已生成：",
-      outputs.data_PE_clean_csv ? `- docs/data/${outputs.data_PE_clean_csv}` : null,
-      outputs.data_bond_clean_csv ? `- docs/data/${outputs.data_bond_clean_csv}` : null,
-      outputs.merged_csv ? `- docs/data/${outputs.merged_csv}` : null,
       outputs.erp_csv ? `- docs/data/${outputs.erp_csv}` : null,
       outputs.erp_xlsx ? `- docs/data/${outputs.erp_xlsx}` : null,
+      outputs.merged_csv ? `- docs/data/${outputs.merged_csv}` : null,
     ].filter(Boolean);
 
     setStatus("ERP 生成完成。");
@@ -166,12 +108,7 @@ const generateErp10y = async () => {
   setStatus("正在生成 ERP_10Year（Feature 3）...");
 
   try {
-    const response = await fetch("/api/erp10y", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error || "生成失败。");
-    }
-
+    const data = await postJson("/api/erp10y");
     const lines = [
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
@@ -189,9 +126,54 @@ const generateErp10y = async () => {
   }
 };
 
-convertButton.addEventListener("click", convertFile);
+const parseRollingN = () => {
+  const raw = String(rollingNInput.value || "").trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    throw new Error("n 必须为整数（1-4000）。");
+  }
+  if (n < 1 || n > 4000) {
+    throw new Error("n 超出范围（1-4000）。");
+  }
+  return n;
+};
+
+const generateRolling = async () => {
+  let n;
+  try {
+    n = parseRollingN();
+  } catch (error) {
+    showModal("参数错误", error.message);
+    return;
+  }
+
+  isBusy = true;
+  updateControls();
+  setStatus(`正在生成 ERP_Rolling Calculation（n=${n}）...`);
+
+  try {
+    const data = await postJson("/api/erprolling", { n });
+    const lines = [
+      `n = ${data.n}`,
+      "已生成：",
+      data.output_csv ? `- docs/data/${data.output_csv}` : null,
+      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
+    ].filter(Boolean);
+
+    setStatus("滚动计算生成完成。");
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    setStatus("滚动计算生成失败。");
+    showModal("生成失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 erpButton.addEventListener("click", generateErp);
 erp10yButton.addEventListener("click", generateErp10y);
+rollingButton.addEventListener("click", generateRolling);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {
@@ -199,17 +181,7 @@ modal.addEventListener("click", (event) => {
   }
 });
 
-if (window.location.protocol === "file:") {
-  setPlaceholder("请通过本地服务打开页面");
-  hasFiles = false;
-  isServiceAvailable = false;
-  updateControls();
-  setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5000");
-  showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5000");
-} else {
-  setPlaceholder("正在加载文件列表...");
-  hasFiles = false;
-  isServiceAvailable = true;
-  updateControls();
-  loadFiles();
-}
+isServiceAvailable = false;
+updateControls();
+checkService();
+

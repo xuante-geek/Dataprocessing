@@ -9,39 +9,34 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">功能 1</p>
-        <h1>Excel 转 CSV</h1>
+        <p class="eyebrow">DataProcessing</p>
+        <h1>股权风险溢价（ERP）处理器</h1>
         <p class="subhead">
-          从 <span class="path">input</span> 选择 Excel 文件，导出 CSV 到
-          <span class="path">docs/data</span>。
+          程序会自动读取 <span class="path">input</span> 中的
+          <span class="path">data_PE.xlsx</span>、<span class="path">data_bond.xlsx</span>，
+          并导出到 <span class="path">docs/data</span>。
         </p>
       </header>
 
       <section class="panel">
-        <div class="control">
-          <label for="file-select">输入文件</label>
-          <div class="select-wrap">
-            <select id="file-select" aria-label="Excel 文件"></select>
-          </div>
-        </div>
-
         <div class="actions">
-          <button id="convert" type="button" class="primary">确认并导出 CSV</button>
           <button id="erp" type="button" class="ghost">生成 ERP（Feature 2）</button>
           <button id="erp10y" type="button" class="ghost">生成 ERP_10Year（Feature 3）</button>
+          <button id="rolling" type="button" class="primary">生成 ERP_Rolling Calculation（Feature 4）</button>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
 
-        <div class="hint">
-          <p class="hint-title">Feature 2 输入要求</p>
-          <p class="hint-body">请在 <span class="path">input</span> 中放入：<span class="path">data_PE.xlsx</span>、<span class="path">data_bond.xlsx</span>。</p>
-          <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（含清洗后 CSV/Excel、合并表、ERP）。</p>
+        <div class="control">
+          <label for="rolling-n">滚动周期 n（交易日）</label>
+          <div class="select-wrap">
+            <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
+          </div>
         </div>
 
         <div class="hint">
-          <p class="hint-title">Feature 3 计算说明</p>
-          <p class="hint-body">使用滚动 2000 个交易日（约 10 年）计算 ERP 的中位数与总体标准差，并生成 5 条布林带（±1σ、±2σ）。</p>
-          <p class="hint-body">输出文件名为：<span class="path">ERP_10Year.csv</span>（同时生成同名 Excel 便于查看）。</p>
+          <p class="hint-title">说明</p>
+          <p class="hint-body">Feature 3 固定使用 n=2000（约 10 年）；Feature 4 支持自定义 n（范围 1-4000）。</p>
+          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_10Year.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>（同时生成同名 Excel）。</p>
         </div>
       </section>
     </main>

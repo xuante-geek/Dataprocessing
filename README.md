@@ -39,3 +39,8 @@
 - 总体标准差（STDEVP）
 
 并生成 5 条布林带列：`+2σ`、`+1σ`、`中位数`、`-1σ`、`-2σ`，输出到 `docs/data/ERP_10Year.csv`。
+
+## Feature 4：ERP_Rolling Calculation
+
+页面提供输入框 `n`（范围 1-4000），用于按滚动 `n` 个交易日计算布林带，导出到：
+- `docs/data/ERP_Rolling Calculation.csv`
