@@ -1,6 +1,7 @@
 const fileSelect = document.getElementById("file-select");
 const convertButton = document.getElementById("convert");
 const erpButton = document.getElementById("erp");
+const erp10yButton = document.getElementById("erp10y");
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
 const modalTitle = document.getElementById("modal-title");
@@ -29,6 +30,7 @@ const updateControls = () => {
   fileSelect.disabled = isBusy || !hasFiles;
   convertButton.disabled = isBusy || !hasFiles;
   erpButton.disabled = isBusy || !isServiceAvailable;
+  erp10yButton.disabled = isBusy || !isServiceAvailable;
 };
 
 const setPlaceholder = (text) => {
@@ -158,8 +160,38 @@ const generateErp = async () => {
   }
 };
 
+const generateErp10y = async () => {
+  isBusy = true;
+  updateControls();
+  setStatus("正在生成 ERP_10Year（Feature 3）...");
+
+  try {
+    const response = await fetch("/api/erp10y", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "生成失败。");
+    }
+
+    const lines = [
+      "已生成：",
+      data.output_csv ? `- docs/data/${data.output_csv}` : null,
+      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
+    ].filter(Boolean);
+
+    setStatus("ERP_10Year 生成完成。");
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    setStatus("ERP_10Year 生成失败。");
+    showModal("生成失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 convertButton.addEventListener("click", convertFile);
 erpButton.addEventListener("click", generateErp);
+erp10yButton.addEventListener("click", generateErp10y);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {

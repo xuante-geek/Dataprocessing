@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 from typing import Iterable
+from bisect import bisect_left, insort
 
 from flask import Flask, jsonify, request
 
@@ -470,6 +471,87 @@ def _write_xlsx(rows: list[list[object]], path: Path, sheet_title: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook_out.save(path)
 
+def _rolling_median(sorted_window: list[float]) -> float:
+    size = len(sorted_window)
+    if size == 0:
+        raise ValueError("窗口为空")
+    mid = size // 2
+    if size % 2 == 1:
+        return float(sorted_window[mid])
+    return (float(sorted_window[mid - 1]) + float(sorted_window[mid])) / 2.0
+
+
+def _rolling_stddevp(sum_values: float, sum_squares: float, size: int) -> float:
+    if size <= 0:
+        raise ValueError("窗口为空")
+    mean = sum_values / size
+    variance = (sum_squares / size) - (mean * mean)
+    if variance < 0 and variance > -1e-12:
+        variance = 0.0
+    if variance < 0:
+        raise ValueError("方差为负数（数值异常）")
+    return math.sqrt(variance)
+
+
+def _compute_erp_10year_bands(
+    erp_rows: list[list[object]],
+    *,
+    window_size: int = 2000,
+) -> list[list[object]]:
+    if not erp_rows or len(erp_rows) < 2:
+        raise ValueError("ERP 数据为空")
+
+    header = erp_rows[0]
+    if len(header) < 5 or header[4] != "股权风险溢价":
+        raise ValueError("ERP 表头不符合预期")
+
+    data_rows = erp_rows[1:]
+    if len(data_rows) < window_size:
+        raise ValueError(f"数据不足：至少需要 {window_size} 行交易日数据")
+
+    output: list[list[object]] = [
+        ["日期", "十年期收益率", "PE-TTM-S", "收盘点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
+    ]
+
+    sorted_window: list[float] = []
+    queue: list[float] = []
+    sum_values = 0.0
+    sum_squares = 0.0
+
+    for index, row in enumerate(data_rows):
+        erp_value = row[4]
+        if not isinstance(erp_value, (int, float)):
+            raise ValueError(f"ERP 第 {index + 2} 行数值类型不合法")
+        erp_float = float(erp_value)
+
+        insort(sorted_window, erp_float)
+        queue.append(erp_float)
+        sum_values += erp_float
+        sum_squares += erp_float * erp_float
+
+        if len(queue) > window_size:
+            leaving = queue.pop(0)
+            sum_values -= leaving
+            sum_squares -= leaving * leaving
+            remove_index = bisect_left(sorted_window, leaving)
+            if remove_index >= len(sorted_window) or sorted_window[remove_index] != leaving:
+                raise ValueError("内部错误：滚动窗口移除失败")
+            sorted_window.pop(remove_index)
+
+        if len(queue) < window_size:
+            continue
+
+        median = _rolling_median(sorted_window)
+        stddevp = _rolling_stddevp(sum_values, sum_squares, window_size)
+        upper2 = median + 2 * stddevp
+        upper1 = median + stddevp
+        lower1 = median - stddevp
+        lower2 = median - 2 * stddevp
+
+        output.append([row[0], row[1], row[2], row[3], erp_float, upper2, upper1, median, lower1, lower2])
+
+    return output
+
 
 @app.get("/")
 def index() -> object:
@@ -571,6 +653,32 @@ def generate_erp() -> object:
                 }
             }
         )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+@app.post("/api/erp10y")
+def generate_erp_10year() -> object:
+    try:
+        pe_path = _find_input_xlsx("data_PE")
+        bond_path = _find_input_xlsx("data_bond")
+
+        pe_rows = _process_data_pe(pe_path)
+        bond_rows = _process_data_bond(bond_path)
+        merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
+        erp_rows = _compute_erp_rows(merged_rows, bond_rows)
+
+        bands_rows = _compute_erp_10year_bands(erp_rows, window_size=2000)
+
+        csv_name = "ERP_10Year.csv"
+        xlsx_name = "ERP_10Year.xlsx"
+        _write_csv(bands_rows, OUTPUT_DIR / csv_name)
+        _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_10Year")
+
+        return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name})
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
