@@ -27,7 +27,14 @@
 
         <div class="actions">
           <button id="convert" type="button" class="primary">确认并导出 CSV</button>
+          <button id="erp" type="button" class="ghost">生成 ERP（Feature 2）</button>
           <span id="status" class="status" aria-live="polite"></span>
+        </div>
+
+        <div class="hint">
+          <p class="hint-title">Feature 2 输入要求</p>
+          <p class="hint-body">请在 <span class="path">input</span> 中放入：<span class="path">data_PE.xlsx</span>、<span class="path">data_bond.xlsx</span>。</p>
+          <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（含清洗后 CSV/Excel、合并表、ERP）。</p>
         </div>
       </section>
     </main>

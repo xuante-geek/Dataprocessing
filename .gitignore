@@ -11,5 +11,7 @@ venv/
 # Local inputs/outputs
 input/*.xlsx
 input/*.xls
+input/~$*.xlsx
 docs/data/*.csv
+docs/data/*.xlsx
 logs/
