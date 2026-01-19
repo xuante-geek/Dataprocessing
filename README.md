@@ -44,3 +44,12 @@
 
 页面提供输入框 `n`（范围 1-4000），用于按滚动 `n` 个交易日计算布林带，导出到：
 - `docs/data/ERP_Rolling Calculation.csv`
+
+## Feature 5：ERP_Interval
+
+输入固定区间起始日期与终止日期（`YYYY-MM-DD`）：
+- 起始日期若为非交易日会自动顺延到下一个交易日
+- 终止日期若为非交易日会自动回退到上一个交易日
+
+程序会计算区间 ERP 中位数和总体标准差，并输出水平布林线到：
+- `docs/data/ERP_Interval.csv`

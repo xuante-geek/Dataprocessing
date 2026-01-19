@@ -23,6 +23,7 @@
           <button id="erp" type="button" class="ghost">生成 ERP（Feature 2）</button>
           <button id="erp10y" type="button" class="ghost">生成 ERP_10Year（Feature 3）</button>
           <button id="rolling" type="button" class="primary">生成 ERP_Rolling Calculation（Feature 4）</button>
+          <button id="interval" type="button" class="ghost">生成 ERP_Interval（Feature 5）</button>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
 
@@ -33,10 +34,25 @@
           </div>
         </div>
 
+        <div class="control">
+          <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
+          <div class="select-wrap">
+            <input id="interval-start" type="date" />
+          </div>
+        </div>
+
+        <div class="control">
+          <label for="interval-end">固定区间终止日期（YYYY-MM-DD）</label>
+          <div class="select-wrap">
+            <input id="interval-end" type="date" />
+          </div>
+        </div>
+
         <div class="hint">
           <p class="hint-title">说明</p>
           <p class="hint-body">Feature 3 固定使用 n=2000（约 10 年）；Feature 4 支持自定义 n（范围 1-4000）。</p>
-          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_10Year.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>（同时生成同名 Excel）。</p>
+          <p class="hint-body">Feature 5 计算“起始日期→最近交易日”的区间统计，并输出水平布林线。</p>
+          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_10Year.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
         </div>
       </section>
     </main>

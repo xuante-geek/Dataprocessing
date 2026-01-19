@@ -1,7 +1,10 @@
 const erpButton = document.getElementById("erp");
 const erp10yButton = document.getElementById("erp10y");
 const rollingButton = document.getElementById("rolling");
+const intervalButton = document.getElementById("interval");
 const rollingNInput = document.getElementById("rolling-n");
+const intervalStartInput = document.getElementById("interval-start");
+const intervalEndInput = document.getElementById("interval-end");
 
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
@@ -30,7 +33,10 @@ const updateControls = () => {
   erpButton.disabled = isBusy || !isServiceAvailable;
   erp10yButton.disabled = isBusy || !isServiceAvailable;
   rollingButton.disabled = isBusy || !isServiceAvailable;
-  rollingNInput.disabled = isBusy || !isServiceAvailable;
+  rollingNInput.disabled = isBusy;
+  intervalButton.disabled = isBusy || !isServiceAvailable;
+  intervalStartInput.disabled = isBusy;
+  intervalEndInput.disabled = isBusy;
 };
 
 const checkService = async () => {
@@ -171,9 +177,78 @@ const generateRolling = async () => {
   }
 };
 
+const parseIntervalStart = () => {
+  const raw = String(intervalStartInput.value || "").trim();
+  if (!raw) {
+    throw new Error("请填写起始日期（YYYY-MM-DD）。");
+  }
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(raw)) {
+    throw new Error("起始日期格式必须为 YYYY-MM-DD。");
+  }
+  return raw;
+};
+
+const parseIntervalEnd = () => {
+  const raw = String(intervalEndInput.value || "").trim();
+  if (!raw) {
+    throw new Error("请填写终止日期（YYYY-MM-DD）。");
+  }
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(raw)) {
+    throw new Error("终止日期格式必须为 YYYY-MM-DD。");
+  }
+  return raw;
+};
+
+const generateInterval = async () => {
+  let startDate;
+  let endDate;
+  try {
+    startDate = parseIntervalStart();
+    endDate = parseIntervalEnd();
+  } catch (error) {
+    showModal("参数错误", error.message);
+    return;
+  }
+
+  isBusy = true;
+  updateControls();
+  setStatus(`正在生成 ERP_Interval（${startDate} → ${endDate}）...`);
+
+  try {
+    const data = await postJson("/api/erpinterval", { start_date: startDate, end_date: endDate });
+    if (data.used_end_date && intervalEndInput.value !== data.used_end_date) {
+      intervalEndInput.value = data.used_end_date;
+    }
+    const adjustedNote = data.adjusted_to_trading_day
+      ? `（非交易日已自动调整为 ${data.used_start_date}）`
+      : "";
+    const adjustedEndNote = data.adjusted_end_to_trading_day
+      ? `（非交易日已自动回退为 ${data.used_end_date}）`
+      : "";
+    const lines = [
+      `起始日期：${data.input_start_date} ${adjustedNote}`.trim(),
+      `终止日期：${data.input_end_date} ${adjustedEndNote}`.trim(),
+      `有效区间：${data.used_start_date} → ${data.used_end_date}`,
+      "已生成：",
+      data.output_csv ? `- docs/data/${data.output_csv}` : null,
+      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
+    ].filter(Boolean);
+
+    setStatus("固定区间生成完成。");
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    setStatus("固定区间生成失败。");
+    showModal("生成失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 erpButton.addEventListener("click", generateErp);
 erp10yButton.addEventListener("click", generateErp10y);
 rollingButton.addEventListener("click", generateRolling);
+intervalButton.addEventListener("click", generateInterval);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {
@@ -183,5 +258,9 @@ modal.addEventListener("click", (event) => {
 
 isServiceAvailable = false;
 updateControls();
+const today = new Date();
+const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+  .toISOString()
+  .slice(0, 10);
+intervalEndInput.value = localDate;
 checkService();
-

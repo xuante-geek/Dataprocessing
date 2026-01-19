@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bisect import bisect_left, insort
+from bisect import bisect_left, bisect_right, insort
 from collections import deque
 import csv
 import datetime as dt
@@ -556,6 +556,87 @@ def _compute_erp_rolling_bands(
     return output
 
 
+def _compute_erp_interval_bands(
+    erp_rows: list[list[object]],
+    *,
+    start_date: dt.date,
+    end_date: dt.date,
+) -> tuple[dt.date, dt.date, dt.date, dt.date, list[list[object]], float, float]:
+    if not erp_rows or len(erp_rows) < 2:
+        raise ValueError("ERP 数据为空")
+
+    header = erp_rows[0]
+    if len(header) < 5 or header[4] != "股权风险溢价":
+        raise ValueError("ERP 表头不符合预期")
+
+    data_rows = erp_rows[1:]
+    dates: list[dt.date] = []
+    for index, row in enumerate(data_rows, start=2):
+        try:
+            dates.append(dt.date.fromisoformat(str(row[0])))
+        except ValueError as exc:
+            raise ValueError(f"ERP 第 {index} 行日期无法解析") from exc
+
+    if not dates:
+        raise ValueError("ERP 数据为空")
+
+    earliest = dates[0]
+    latest = dates[-1]
+    if start_date < earliest:
+        raise ValueError(f"起始日期过早：最早日期为 {earliest.isoformat()}")
+    if start_date > latest:
+        raise ValueError(f"起始日期过晚：最近日期为 {latest.isoformat()}")
+    if end_date < earliest:
+        raise ValueError(f"终止日期过早：最早日期为 {earliest.isoformat()}")
+    if end_date > latest:
+        raise ValueError(f"终止日期过晚：最近日期为 {latest.isoformat()}")
+
+    start_index = bisect_left(dates, start_date)
+    if start_index >= len(dates):
+        raise ValueError(f"起始日期过晚：最近日期为 {latest.isoformat()}")
+
+    end_index = bisect_right(dates, end_date) - 1
+    if end_index < 0:
+        raise ValueError(f"终止日期过早：最早日期为 {earliest.isoformat()}")
+
+    actual_start = dates[start_index]
+    actual_end = dates[end_index]
+    if actual_start > actual_end:
+        raise ValueError("起始日期不能晚于终止日期（自动调整后）")
+
+    interval_rows = data_rows[start_index : end_index + 1]
+    if not interval_rows:
+        raise ValueError("区间内没有数据")
+
+    erp_values: list[float] = []
+    sum_values = 0.0
+    sum_squares = 0.0
+    for index, row in enumerate(interval_rows, start=start_index + 2):
+        value = row[4]
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"ERP 第 {index} 行数值类型不合法")
+        value_float = float(value)
+        erp_values.append(value_float)
+        sum_values += value_float
+        sum_squares += value_float * value_float
+
+    sorted_values = sorted(erp_values)
+    median = _rolling_median(sorted_values)
+    stddevp = _rolling_stddevp(sum_values, sum_squares, len(erp_values))
+    upper2 = median + 2 * stddevp
+    upper1 = median + stddevp
+    lower1 = median - stddevp
+    lower2 = median - 2 * stddevp
+
+    output: list[list[object]] = [
+        ["日期", "十年期收益率", "PE-TTM-S", "收盘点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
+    ]
+    for row in interval_rows:
+        output.append([row[0], row[1], row[2], row[3], row[4], upper2, upper1, median, lower1, lower2])
+
+    return earliest, latest, actual_start, actual_end, output, median, stddevp
+
+
 @app.get("/")
 def index() -> object:
     return app.send_static_file("index.html")
@@ -722,6 +803,73 @@ def generate_erp_rolling() -> object:
         _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_Rolling Calculation")
 
         return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name, "n": n})
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/erpinterval")
+def generate_erp_interval() -> object:
+    payload = request.get_json(silent=True) or {}
+    start_date_raw = payload.get("start_date")
+    end_date_raw = payload.get("end_date")
+
+    try:
+        if not isinstance(start_date_raw, str) or not start_date_raw.strip():
+            raise ValueError("缺少起始日期 start_date")
+        try:
+            start_date = dt.date.fromisoformat(start_date_raw.strip())
+        except ValueError as exc:
+            raise ValueError("起始日期格式必须为 YYYY-MM-DD") from exc
+
+        if end_date_raw is None or (isinstance(end_date_raw, str) and not end_date_raw.strip()):
+            end_date = dt.date.today()
+        else:
+            if not isinstance(end_date_raw, str):
+                raise ValueError("终止日期格式必须为 YYYY-MM-DD")
+            try:
+                end_date = dt.date.fromisoformat(end_date_raw.strip())
+            except ValueError as exc:
+                raise ValueError("终止日期格式必须为 YYYY-MM-DD") from exc
+
+        pe_path = _find_input_xlsx("data_PE")
+        bond_path = _find_input_xlsx("data_bond")
+
+        pe_rows = _process_data_pe(pe_path)
+        bond_rows = _process_data_bond(bond_path)
+        merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
+        erp_rows = _compute_erp_rows(merged_rows, bond_rows)
+
+        earliest, latest, actual_start, actual_end, output_rows, median, stddevp = _compute_erp_interval_bands(
+            erp_rows, start_date=start_date, end_date=end_date
+        )
+
+        csv_name = "ERP_Interval.csv"
+        xlsx_name = "ERP_Interval.xlsx"
+        _write_csv(output_rows, OUTPUT_DIR / csv_name)
+        _write_xlsx(output_rows, OUTPUT_DIR / xlsx_name, "ERP_Interval")
+
+        adjusted = actual_start != start_date
+        adjusted_end = actual_end != end_date
+        return jsonify(
+            {
+                "output_csv": csv_name,
+                "output_xlsx": xlsx_name,
+                "input_start_date": start_date.isoformat(),
+                "used_start_date": actual_start.isoformat(),
+                "input_end_date": end_date.isoformat(),
+                "used_end_date": actual_end.isoformat(),
+                "earliest_date": earliest.isoformat(),
+                "latest_date": latest.isoformat(),
+                "adjusted_to_trading_day": adjusted,
+                "adjusted_end_to_trading_day": adjusted_end,
+                "median": median,
+                "stddevp": stddevp,
+            }
+        )
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
