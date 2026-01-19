@@ -1,5 +1,4 @@
 const erpButton = document.getElementById("erp");
-const erp10yButton = document.getElementById("erp10y");
 const rollingButton = document.getElementById("rolling");
 const intervalButton = document.getElementById("interval");
 const rollingNInput = document.getElementById("rolling-n");
@@ -31,7 +30,6 @@ const hideModal = () => {
 
 const updateControls = () => {
   erpButton.disabled = isBusy || !isServiceAvailable;
-  erp10yButton.disabled = isBusy || !isServiceAvailable;
   rollingButton.disabled = isBusy || !isServiceAvailable;
   rollingNInput.disabled = isBusy;
   intervalButton.disabled = isBusy || !isServiceAvailable;
@@ -85,7 +83,7 @@ const postJson = async (url, payload) => {
 const generateErp = async () => {
   isBusy = true;
   updateControls();
-  setStatus("正在生成 ERP（Feature 2）...");
+  setStatus("正在导出完整周期 ERP...");
 
   try {
     const data = await postJson("/api/erp");
@@ -97,35 +95,11 @@ const generateErp = async () => {
       outputs.merged_csv ? `- docs/data/${outputs.merged_csv}` : null,
     ].filter(Boolean);
 
-    setStatus("ERP 生成完成。");
+    setStatus("导出完成。");
     showModal("完成", lines.join("\n"));
   } catch (error) {
-    setStatus("ERP 生成失败。");
-    showModal("生成失败", error.message);
-  } finally {
-    isBusy = false;
-    updateControls();
-  }
-};
-
-const generateErp10y = async () => {
-  isBusy = true;
-  updateControls();
-  setStatus("正在生成 ERP_10Year（Feature 3）...");
-
-  try {
-    const data = await postJson("/api/erp10y");
-    const lines = [
-      "已生成：",
-      data.output_csv ? `- docs/data/${data.output_csv}` : null,
-      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
-    ].filter(Boolean);
-
-    setStatus("ERP_10Year 生成完成。");
-    showModal("完成", lines.join("\n"));
-  } catch (error) {
-    setStatus("ERP_10Year 生成失败。");
-    showModal("生成失败", error.message);
+    setStatus("导出失败。");
+    showModal("导出失败", error.message);
   } finally {
     isBusy = false;
     updateControls();
@@ -155,7 +129,7 @@ const generateRolling = async () => {
 
   isBusy = true;
   updateControls();
-  setStatus(`正在生成 ERP_Rolling Calculation（n=${n}）...`);
+  setStatus(`正在导出滚动周期 ERP（n=${n}）...`);
 
   try {
     const data = await postJson("/api/erprolling", { n });
@@ -166,11 +140,11 @@ const generateRolling = async () => {
       data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
     ].filter(Boolean);
 
-    setStatus("滚动计算生成完成。");
+    setStatus("导出完成。");
     showModal("完成", lines.join("\n"));
   } catch (error) {
-    setStatus("滚动计算生成失败。");
-    showModal("生成失败", error.message);
+    setStatus("导出失败。");
+    showModal("导出失败", error.message);
   } finally {
     isBusy = false;
     updateControls();
@@ -212,7 +186,7 @@ const generateInterval = async () => {
 
   isBusy = true;
   updateControls();
-  setStatus(`正在生成 ERP_Interval（${startDate} → ${endDate}）...`);
+  setStatus(`正在导出指定周期 ERP（${startDate} → ${endDate}）...`);
 
   try {
     const data = await postJson("/api/erpinterval", { start_date: startDate, end_date: endDate });
@@ -237,8 +211,8 @@ const generateInterval = async () => {
     setStatus("固定区间生成完成。");
     showModal("完成", lines.join("\n"));
   } catch (error) {
-    setStatus("固定区间生成失败。");
-    showModal("生成失败", error.message);
+    setStatus("导出失败。");
+    showModal("导出失败", error.message);
   } finally {
     isBusy = false;
     updateControls();
@@ -246,7 +220,6 @@ const generateInterval = async () => {
 };
 
 erpButton.addEventListener("click", generateErp);
-erp10yButton.addEventListener("click", generateErp10y);
 rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
 modalClose.addEventListener("click", hideModal);

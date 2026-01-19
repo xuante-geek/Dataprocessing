@@ -11,19 +11,14 @@
       <header class="hero">
         <p class="eyebrow">DataProcessing</p>
         <h1>股权风险溢价（ERP）处理器</h1>
-        <p class="subhead">
-          程序会自动读取 <span class="path">input</span> 中的
-          <span class="path">data_PE.xlsx</span>、<span class="path">data_bond.xlsx</span>，
-          并导出到 <span class="path">docs/data</span>。
-        </p>
+        <p class="subhead">一键生成 ERP 数据文件。</p>
       </header>
 
       <section class="panel">
         <div class="actions">
-          <button id="erp" type="button" class="ghost">生成 ERP（Feature 2）</button>
-          <button id="erp10y" type="button" class="ghost">生成 ERP_10Year（Feature 3）</button>
-          <button id="rolling" type="button" class="primary">生成 ERP_Rolling Calculation（Feature 4）</button>
-          <button id="interval" type="button" class="ghost">生成 ERP_Interval（Feature 5）</button>
+          <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>
+          <button id="rolling" type="button" class="action-btn">导出滚动周期 ERP</button>
+          <button id="interval" type="button" class="action-btn">导出指定周期 ERP</button>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
 
@@ -50,9 +45,8 @@
 
         <div class="hint">
           <p class="hint-title">说明</p>
-          <p class="hint-body">Feature 3 固定使用 n=2000（约 10 年）；Feature 4 支持自定义 n（范围 1-4000）。</p>
-          <p class="hint-body">Feature 5 计算“起始日期→最近交易日”的区间统计，并输出水平布林线。</p>
-          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_10Year.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
+          <p class="hint-body">滚动周期用于计算布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
+          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
         </div>
       </section>
     </main>
