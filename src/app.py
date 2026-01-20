@@ -27,6 +27,8 @@ DOCS_DIR = BASE_DIR / "docs"
 
 app = Flask(__name__, static_folder=str(DOCS_DIR), static_url_path="")
 
+OUTPUT_DECIMAL_PLACES = 6
+
 
 def _cell_to_text(value: object) -> str:
     if value is None:
@@ -36,8 +38,8 @@ def _cell_to_text(value: object) -> str:
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return str(value)
-        rounded = round(value, 4)
-        text = f"{rounded:.4f}"
+        rounded = round(value, OUTPUT_DECIMAL_PLACES)
+        text = f"{rounded:.{OUTPUT_DECIMAL_PLACES}f}"
         return text.rstrip("0").rstrip(".")
     return str(value)
 
@@ -45,7 +47,7 @@ def _round_for_output(value: object) -> object:
     if isinstance(value, float):
         if math.isnan(value) or math.isinf(value):
             return value
-        return round(value, 4)
+        return round(value, OUTPUT_DECIMAL_PLACES)
     return value
 
 
@@ -222,6 +224,9 @@ def _find_input_xlsx(stem: str) -> Path:
     if not INPUT_DIR.exists():
         raise FileNotFoundError("input/ 目录不存在")
 
+    def normalize(text: str) -> str:
+        return " ".join(text.strip().split()).lower()
+
     candidates: list[Path] = []
     for path in INPUT_DIR.iterdir():
         if not path.is_file():
@@ -230,7 +235,7 @@ def _find_input_xlsx(stem: str) -> Path:
             continue
         if path.suffix.lower() != ".xlsx":
             continue
-        if path.stem.lower() == stem.lower():
+        if normalize(path.stem) == normalize(stem):
             candidates.append(path)
 
     if not candidates:
@@ -471,6 +476,42 @@ def _write_xlsx(rows: list[list[object]], path: Path, sheet_title: str) -> None:
         sheet_out.append([_round_for_output(value) for value in row])
     path.parent.mkdir(parents=True, exist_ok=True)
     workbook_out.save(path)
+
+
+def _process_ratio_file(source_path: Path, *, metric_header: str) -> list[list[object]]:
+    workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
+    sheet_name = workbook.sheetnames[0] if workbook.sheetnames else None
+    if not sheet_name:
+        raise ValueError(f"{source_path.name}：未找到可用工作表")
+    sheet = workbook[sheet_name]
+
+    last_col = 4  # A-D
+    rows_iter = _iter_rows_values(sheet, last_col=last_col)
+    header = next(rows_iter, None)
+    if not header:
+        raise ValueError(f"{source_path.name}：未找到标题行")
+
+    header_a = _validate_header_cell(header[0])
+    _ = _validate_header_cell(header[3])
+    if "日期" not in header_a and header_a.lower() != "date":
+        raise ValueError(f"{source_path.name}：A1 标题应为“日期”")
+
+    rows: list[tuple[dt.date, float]] = []
+    for row_index, values in enumerate(rows_iter, start=2):
+        try:
+            date = _parse_date(values[0], epoch=workbook.epoch)
+            ratio = _coerce_float(values[3])
+            rows.append((date, ratio))
+        except Exception:
+            continue
+
+    if not rows:
+        raise ValueError(f"{source_path.name}：清洗后没有可用数据行")
+
+    rows.sort(key=lambda item: item[0])
+    output: list[list[object]] = [[header_a, metric_header]]
+    output.extend([[date.isoformat(), ratio] for date, ratio in rows])
+    return output
 
 def _rolling_median(sorted_window: list[float]) -> float:
     size = len(sorted_window)
@@ -868,6 +909,44 @@ def generate_erp_interval() -> object:
                 "adjusted_end_to_trading_day": adjusted_end,
                 "median": median,
                 "stddevp": stddevp,
+            }
+        )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/thermometer/clean")
+def generate_thermometer_clean() -> object:
+    try:
+        gdp_path = _find_input_xlsx("data_Ratio GDP")
+        volume_path = _find_input_xlsx("data_Ratio Volume")
+        lend_path = _find_input_xlsx("data_Ratio Securities Lend")
+
+        gdp_rows = _process_ratio_file(gdp_path, metric_header="总市值/GDP")
+        volume_rows = _process_ratio_file(volume_path, metric_header="成交量/总市值")
+        lend_rows = _process_ratio_file(lend_path, metric_header="融资融券/总市值")
+
+        outputs = {
+            "ratio_gdp": "Ratio_GDP.csv",
+            "ratio_volume": "Ratio_Volume.csv",
+            "ratio_securities_lend": "Ratio_Securities_Lend.csv",
+        }
+
+        _write_csv(gdp_rows, OUTPUT_DIR / outputs["ratio_gdp"])
+        _write_csv(volume_rows, OUTPUT_DIR / outputs["ratio_volume"])
+        _write_csv(lend_rows, OUTPUT_DIR / outputs["ratio_securities_lend"])
+
+        return jsonify(
+            {
+                "outputs": {
+                    "ratio_gdp_csv": outputs["ratio_gdp"],
+                    "ratio_volume_csv": outputs["ratio_volume"],
+                    "ratio_securities_lend_csv": outputs["ratio_securities_lend"],
+                }
             }
         )
     except FileNotFoundError as exc:

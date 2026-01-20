@@ -10,43 +10,63 @@
     <main class="shell">
       <header class="hero">
         <p class="eyebrow">DataProcessing</p>
-        <h1>股权风险溢价（ERP）处理器</h1>
+        <h1 id="page-title">股权风险溢价（ERP）处理器</h1>
         <p class="subhead">一键生成 ERP 数据文件。</p>
       </header>
 
       <section class="panel">
-        <div class="actions">
-          <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>
-          <button id="rolling" type="button" class="action-btn">导出滚动周期 ERP</button>
-          <button id="interval" type="button" class="action-btn">导出指定周期 ERP</button>
-          <span id="status" class="status" aria-live="polite"></span>
+        <div class="tabs" role="tablist" aria-label="数据处理面板">
+          <button id="tab-erp" class="tab active" type="button" role="tab" aria-selected="true">ERP</button>
+          <button id="tab-thermo" class="tab" type="button" role="tab" aria-selected="false">市场温度计</button>
         </div>
 
-        <div class="control">
-          <label for="rolling-n">滚动周期 n（交易日）</label>
-          <div class="select-wrap">
-            <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
+        <div id="panel-erp" class="panel-body">
+          <div class="actions">
+            <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>
+            <button id="rolling" type="button" class="action-btn">导出滚动周期 ERP</button>
+            <button id="interval" type="button" class="action-btn">导出指定周期 ERP</button>
+            <span id="status" class="status" aria-live="polite"></span>
+          </div>
+
+          <div class="control">
+            <label for="rolling-n">滚动周期 n（交易日）</label>
+            <div class="select-wrap">
+              <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
+            </div>
+          </div>
+
+          <div class="control">
+            <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
+            <div class="select-wrap">
+              <input id="interval-start" type="date" />
+            </div>
+          </div>
+
+          <div class="control">
+            <label for="interval-end">固定区间终止日期（YYYY-MM-DD）</label>
+            <div class="select-wrap">
+              <input id="interval-end" type="date" />
+            </div>
+          </div>
+
+          <div class="hint">
+            <p class="hint-title">说明</p>
+            <p class="hint-body">滚动周期用于计算布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
+            <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
           </div>
         </div>
 
-        <div class="control">
-          <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
-          <div class="select-wrap">
-            <input id="interval-start" type="date" />
+        <div id="panel-thermo" class="panel-body hidden">
+          <div class="actions">
+            <button id="thermo-clean" type="button" class="action-btn">导出市场温度计清洗数据</button>
+            <span id="thermo-status" class="status" aria-live="polite"></span>
           </div>
-        </div>
 
-        <div class="control">
-          <label for="interval-end">固定区间终止日期（YYYY-MM-DD）</label>
-          <div class="select-wrap">
-            <input id="interval-end" type="date" />
+          <div class="hint">
+            <p class="hint-title">输入文件</p>
+            <p class="hint-body">请在 <span class="path">input</span> 中放入：<span class="path">data_Ratio GDP.xlsx</span>、<span class="path">data_Ratio Volume.xlsx</span>、<span class="path">data_Ratio Securities Lend .xlsx</span></p>
+            <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（3 份清洗后的 CSV）。</p>
           </div>
-        </div>
-
-        <div class="hint">
-          <p class="hint-title">说明</p>
-          <p class="hint-body">滚动周期用于计算布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
-          <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
         </div>
       </section>
     </main>

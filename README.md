@@ -30,7 +30,7 @@
 - 除上述补齐以外：若仍存在空白/乱码/非法类型单元格，会中断并提示具体单元格坐标
 
 输出格式（当前阶段）：
-- 所有数值最多保留小数点后 4 位（导出时统一四舍五入）
+- 所有数值最多保留小数点后 6 位（导出时统一四舍五入）
 
 ## Feature 3：ERP_10Year
 
@@ -53,3 +53,10 @@
 
 程序会计算区间 ERP 中位数和总体标准差，并输出水平布林线到：
 - `docs/data/ERP_Interval.csv`
+
+## Feature 7：市场温度计（数据清洗）
+
+读取 `input/` 中以下文件并清洗后导出（会删除含空白/非数值/乱码的行，并保留 `日期` + 指标列）：
+- `data_Ratio GDP.xlsx` → `docs/data/Ratio_GDP.csv`
+- `data_Ratio Volume.xlsx` → `docs/data/Ratio_Volume.csv`
+- `data_Ratio Securities Lend .xlsx` → `docs/data/Ratio_Securities_Lend.csv`

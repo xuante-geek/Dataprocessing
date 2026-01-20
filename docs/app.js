@@ -1,15 +1,23 @@
 const erpButton = document.getElementById("erp");
 const rollingButton = document.getElementById("rolling");
 const intervalButton = document.getElementById("interval");
+const thermoCleanButton = document.getElementById("thermo-clean");
 const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
+const thermoStatusText = document.getElementById("thermo-status");
 
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
 const modalTitle = document.getElementById("modal-title");
 const modalMessage = document.getElementById("modal-message");
 const modalClose = document.getElementById("modal-close");
+const pageTitle = document.getElementById("page-title");
+
+const tabErp = document.getElementById("tab-erp");
+const tabThermo = document.getElementById("tab-thermo");
+const panelErp = document.getElementById("panel-erp");
+const panelThermo = document.getElementById("panel-thermo");
 
 let isBusy = false;
 let isServiceAvailable = false;
@@ -35,6 +43,7 @@ const updateControls = () => {
   intervalButton.disabled = isBusy || !isServiceAvailable;
   intervalStartInput.disabled = isBusy;
   intervalEndInput.disabled = isBusy;
+  thermoCleanButton.disabled = isBusy || !isServiceAvailable;
 };
 
 const checkService = async () => {
@@ -57,9 +66,11 @@ const checkService = async () => {
     }
     isServiceAvailable = true;
     setStatus("本地服务已连接，可以开始生成。");
+    thermoStatusText.textContent = "本地服务已连接，可以开始导出。";
   } catch (error) {
     isServiceAvailable = false;
     setStatus("本地服务未连接（请确认已运行 python src/app.py）。");
+    thermoStatusText.textContent = "本地服务未连接。";
     showModal("连接失败", "无法连接本地服务，请先运行：python src/app.py");
   } finally {
     isBusy = false;
@@ -219,9 +230,46 @@ const generateInterval = async () => {
   }
 };
 
+const setActivePanel = (name) => {
+  const isThermo = name === "thermo";
+  tabErp.classList.toggle("active", !isThermo);
+  tabThermo.classList.toggle("active", isThermo);
+  tabErp.setAttribute("aria-selected", String(!isThermo));
+  tabThermo.setAttribute("aria-selected", String(isThermo));
+  panelErp.classList.toggle("hidden", isThermo);
+  panelThermo.classList.toggle("hidden", !isThermo);
+  pageTitle.textContent = isThermo ? "市场温度计" : "股权风险溢价（ERP）处理器";
+};
+
+const generateThermoClean = async () => {
+  isBusy = true;
+  updateControls();
+  thermoStatusText.textContent = "正在导出市场温度计清洗数据...";
+
+  try {
+    const data = await postJson("/api/thermometer/clean");
+    const outputs = data.outputs || {};
+    const lines = [
+      "已生成：",
+      outputs.ratio_gdp_csv ? `- docs/data/${outputs.ratio_gdp_csv}` : null,
+      outputs.ratio_volume_csv ? `- docs/data/${outputs.ratio_volume_csv}` : null,
+      outputs.ratio_securities_lend_csv ? `- docs/data/${outputs.ratio_securities_lend_csv}` : null,
+    ].filter(Boolean);
+    thermoStatusText.textContent = "导出完成。";
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    thermoStatusText.textContent = "导出失败。";
+    showModal("导出失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 erpButton.addEventListener("click", generateErp);
 rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
+thermoCleanButton.addEventListener("click", generateThermoClean);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {
@@ -237,3 +285,7 @@ const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
   .slice(0, 10);
 intervalEndInput.value = localDate;
 checkService();
+
+tabErp.addEventListener("click", () => setActivePanel("erp"));
+tabThermo.addEventListener("click", () => setActivePanel("thermo"));
+setActivePanel("erp");
