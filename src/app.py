@@ -290,6 +290,163 @@ def _validate_expected_header(actual: object, expected: str, coordinate: str) ->
         raise ValueError(f"{coordinate} 标题不匹配：期望“{expected}”，实际“{text}”")
 
 
+def _rolling_percentile(sorted_window: list[float], value: float) -> float:
+    window_size = len(sorted_window)
+    if window_size <= 0:
+        raise ValueError("窗口为空")
+    if window_size == 1:
+        return 50.0
+    left = bisect_left(sorted_window, value)
+    right = bisect_right(sorted_window, value)
+    rank_low = left + 1
+    rank_high = right
+    avg_rank = (rank_low + rank_high) / 2.0
+    return 100.0 * (avg_rank - 1.0) / (window_size - 1.0)
+
+
+def _moving_average(values: list[float], window: int) -> list[float | None]:
+    if window <= 0:
+        raise ValueError("移动平均窗口必须为正整数")
+    out: list[float | None] = []
+    q: deque[float] = deque()
+    sum_values = 0.0
+    for value in values:
+        q.append(value)
+        sum_values += value
+        if len(q) > window:
+            sum_values -= q.popleft()
+        if len(q) == window:
+            out.append(sum_values / window)
+        else:
+            out.append(None)
+    return out
+
+
+def _rolling_percentiles(values: list[float | None], window: int) -> list[float | None]:
+    if window <= 0:
+        raise ValueError("滚动窗口必须为正整数")
+
+    first_valid = 0
+    while first_valid < len(values) and values[first_valid] is None:
+        first_valid += 1
+
+    out: list[float | None] = [None] * len(values)
+    if first_valid >= len(values):
+        return out
+
+    sorted_window: list[float] = []
+    q: deque[float] = deque()
+
+    for index in range(first_valid, len(values)):
+        current = values[index]
+        if current is None:
+            out[index] = None
+            continue
+
+        insort(sorted_window, float(current))
+        q.append(float(current))
+        if len(q) > window:
+            leaving = q.popleft()
+            remove_index = bisect_left(sorted_window, leaving)
+            if remove_index >= len(sorted_window) or sorted_window[remove_index] != leaving:
+                raise ValueError("内部错误：滚动窗口移除失败")
+            sorted_window.pop(remove_index)
+
+        if len(q) < window:
+            out[index] = None
+            continue
+
+        out[index] = _rolling_percentile(sorted_window, float(current))
+
+    return out
+
+
+def _load_ratio_series(source_path: Path) -> tuple[list[str], list[float]]:
+    workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
+    try:
+        sheet_name = workbook.sheetnames[0] if workbook.sheetnames else None
+        if not sheet_name:
+            raise ValueError(f"{source_path.name}：未找到可用工作表")
+        sheet = workbook[sheet_name]
+        epoch = workbook.epoch
+
+        last_col = 4  # A-D
+        rows_iter = _iter_rows_values(sheet, last_col=last_col)
+        header = next(rows_iter, None)
+        if not header:
+            raise ValueError(f"{source_path.name}：未找到标题行")
+
+        header_a = _validate_header_cell(header[0])
+        _ = _validate_header_cell(header[3])
+        if "日期" not in header_a and header_a.lower() != "date":
+            raise ValueError(f"{source_path.name}：A1 标题应为“日期”")
+
+        rows: list[tuple[dt.date, float]] = []
+        for _, values in enumerate(rows_iter, start=2):
+            try:
+                date = _parse_date(values[0], epoch=epoch)
+                ratio = _coerce_float(values[3])
+                rows.append((date, ratio))
+            except Exception:
+                continue
+
+        if not rows:
+            raise ValueError(f"{source_path.name}：清洗后没有可用数据行")
+
+        rows.sort(key=lambda item: item[0])
+        dates = [date.isoformat() for date, _ in rows]
+        metrics = [metric for _, metric in rows]
+        return dates, metrics
+    finally:
+        workbook.close()
+
+
+def _load_erp_series() -> tuple[list[str], list[float], list[float], list[float], list[float]]:
+    pe_path = _find_input_xlsx("data_PE")
+    bond_path = _find_input_xlsx("data_bond")
+
+    pe_rows = _process_data_pe(pe_path)
+    bond_rows = _process_data_bond(bond_path)
+    merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
+    erp_rows = _compute_erp_rows(merged_rows, bond_rows)
+
+    dates: list[str] = []
+    erp_values: list[float] = []
+    bond_yield_values: list[float] = []
+    pe_values: list[float] = []
+    close_values: list[float] = []
+    for row_index, row in enumerate(erp_rows[1:], start=2):
+        try:
+            date_text = str(row[0])
+            _ = dt.date.fromisoformat(date_text)
+            value = row[4]
+            if not isinstance(value, (int, float)):
+                raise ValueError("数值类型不合法")
+            dates.append(date_text)
+            erp_values.append(float(value))
+
+            yield_value = row[1]
+            if not isinstance(yield_value, (int, float)):
+                raise ValueError("十年期收益率类型不合法")
+            bond_yield_values.append(float(yield_value))
+
+            pe_value = row[2]
+            if not isinstance(pe_value, (int, float)):
+                raise ValueError("PE 类型不合法")
+            pe_values.append(float(pe_value))
+
+            close_value = row[3]
+            if not isinstance(close_value, (int, float)):
+                raise ValueError("收盘点位类型不合法")
+            close_values.append(float(close_value))
+        except Exception as exc:
+            raise ValueError(f"ERP 第 {row_index} 行数据不合法：{exc}") from exc
+
+    if not dates:
+        raise ValueError("ERP 数据为空")
+    return dates, erp_values, bond_yield_values, pe_values, close_values
+
+
 def _process_data_pe(source_path: Path) -> list[tuple[dt.date, float, float]]:
     workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
     sheet_name = workbook.sheetnames[0] if workbook.sheetnames else None
@@ -946,6 +1103,133 @@ def generate_thermometer_clean() -> object:
                     "ratio_gdp_csv": outputs["ratio_gdp"],
                     "ratio_volume_csv": outputs["ratio_volume"],
                     "ratio_securities_lend_csv": outputs["ratio_securities_lend"],
+                }
+            }
+        )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/thermometer/percentiles")
+def generate_thermometer_percentiles() -> object:
+    payload = request.get_json(silent=True) or {}
+
+    def get_int(name: str, *, min_value: int, max_value: int) -> int:
+        raw = payload.get(name)
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if not raw:
+                raise ValueError(f"缺少参数：{name}")
+            try:
+                raw = int(raw)
+            except ValueError as exc:
+                raise ValueError(f"{name} 必须为整数") from exc
+        if not isinstance(raw, int):
+            raise ValueError(f"{name} 必须为整数")
+        if raw < min_value or raw > max_value:
+            raise ValueError(f"{name} 超出范围（{min_value}-{max_value}）")
+        return raw
+
+    try:
+        ma_gdp = get_int("moving_average_gdp", min_value=1, max_value=1000)
+        rp_gdp = get_int("rolling_period_gdp", min_value=1, max_value=1000)
+        ma_volume = get_int("moving_average_volume", min_value=1, max_value=4000)
+        rp_volume = get_int("rolling_period_volume", min_value=1, max_value=4000)
+        ma_securities = get_int("moving_average_securities", min_value=1, max_value=4000)
+        rp_securities = get_int("rolling_period_securities", min_value=1, max_value=4000)
+        ma_erp = get_int("moving_erp", min_value=1, max_value=4000)
+        rp_erp = get_int("rolling_period_erp", min_value=1, max_value=4000)
+
+        gdp_path = _find_input_xlsx("data_Ratio GDP")
+        volume_path = _find_input_xlsx("data_Ratio Volume")
+        lend_path = _find_input_xlsx("data_Ratio Securities Lend")
+
+        gdp_dates, gdp_values = _load_ratio_series(gdp_path)
+        vol_dates, vol_values = _load_ratio_series(volume_path)
+        sec_dates, sec_values = _load_ratio_series(lend_path)
+        erp_dates, erp_values, erp_yields, erp_pes, erp_closes = _load_erp_series()
+
+        def build_output(
+            dates: list[str],
+            values: list[float],
+            *,
+            metric_header: str,
+            ma_window: int,
+            rp_window: int,
+        ) -> list[list[object]]:
+            ma_values = _moving_average(values, ma_window)
+            pct_values = _rolling_percentiles(ma_values, rp_window)
+            out: list[list[object]] = [["日期", metric_header, "平均移动", "分位"]]
+            for index, date_text in enumerate(dates):
+                if pct_values[index] is None:
+                    continue
+                out.append([date_text, values[index], ma_values[index], pct_values[index]])
+            return out
+
+        gdp_out = build_output(
+            gdp_dates,
+            gdp_values,
+            metric_header="总市值/GDP",
+            ma_window=ma_gdp,
+            rp_window=rp_gdp,
+        )
+        vol_out = build_output(
+            vol_dates,
+            vol_values,
+            metric_header="成交量/总市值",
+            ma_window=ma_volume,
+            rp_window=rp_volume,
+        )
+        sec_out = build_output(
+            sec_dates,
+            sec_values,
+            metric_header="融资融券/总市值",
+            ma_window=ma_securities,
+            rp_window=rp_securities,
+        )
+        erp_ma_values = _moving_average(erp_values, ma_erp)
+        erp_pct_values = _rolling_percentiles(erp_ma_values, rp_erp)
+        erp_out: list[list[object]] = [
+            ["日期", "股权风险溢价", "平均移动", "分位", "十年期收益率", "PE-TTM-S", "收盘点位"]
+        ]
+        for index, date_text in enumerate(erp_dates):
+            if erp_pct_values[index] is None:
+                continue
+            erp_out.append(
+                [
+                    date_text,
+                    erp_values[index],
+                    erp_ma_values[index],
+                    erp_pct_values[index],
+                    erp_yields[index],
+                    erp_pes[index],
+                    erp_closes[index],
+                ]
+            )
+
+        outputs = {
+            "ratio_gdp": "Ratio_GDP_Percentile.csv",
+            "ratio_volume": "Ratio_Volume_Percentile.csv",
+            "ratio_securities_lend": "Ratio_Securities_Lend_Percentile.csv",
+            "erp": "ERP_Percentile.csv",
+        }
+
+        _write_csv(gdp_out, OUTPUT_DIR / outputs["ratio_gdp"])
+        _write_csv(vol_out, OUTPUT_DIR / outputs["ratio_volume"])
+        _write_csv(sec_out, OUTPUT_DIR / outputs["ratio_securities_lend"])
+        _write_csv(erp_out, OUTPUT_DIR / outputs["erp"])
+
+        return jsonify(
+            {
+                "outputs": {
+                    "ratio_gdp_csv": outputs["ratio_gdp"],
+                    "ratio_volume_csv": outputs["ratio_volume"],
+                    "ratio_securities_lend_csv": outputs["ratio_securities_lend"],
+                    "erp_csv": outputs["erp"],
                 }
             }
         )

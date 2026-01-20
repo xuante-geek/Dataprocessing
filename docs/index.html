@@ -58,14 +58,70 @@
 
         <div id="panel-thermo" class="panel-body hidden">
           <div class="actions">
-            <button id="thermo-clean" type="button" class="action-btn">导出市场温度计清洗数据</button>
-            <span id="thermo-status" class="status" aria-live="polite"></span>
+            <button id="thermo-percentile" type="button" class="action-btn">导出市场温度计分位数据</button>
+            <div class="status-row">
+              <span id="thermo-status" class="status" aria-live="polite"></span>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="control">
+              <label for="ma-gdp">总市值/GDP平均移动（周频）</label>
+              <div class="select-wrap">
+                <input id="ma-gdp" type="number" min="1" max="1000" step="1" value="1" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="rp-gdp">总市值/GDP分位滚动周期（周频）</label>
+              <div class="select-wrap">
+                <input id="rp-gdp" type="number" min="1" max="1000" step="1" value="260" />
+              </div>
+            </div>
+
+            <div class="control">
+              <label for="ma-volume">成交量平均移动</label>
+              <div class="select-wrap">
+                <input id="ma-volume" type="number" min="1" max="4000" step="1" value="1" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="rp-volume">成交量/总市值分位滚动周期</label>
+              <div class="select-wrap">
+                <input id="rp-volume" type="number" min="1" max="4000" step="1" value="2000" />
+              </div>
+            </div>
+
+            <div class="control">
+              <label for="ma-securities">融资融券平均移动</label>
+              <div class="select-wrap">
+                <input id="ma-securities" type="number" min="1" max="4000" step="1" value="1" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="rp-securities">融资融券/总市值分位滚动周期</label>
+              <div class="select-wrap">
+                <input id="rp-securities" type="number" min="1" max="4000" step="1" value="2000" />
+              </div>
+            </div>
+
+            <div class="control">
+              <label for="ma-erp">股权风险溢价平均移动</label>
+              <div class="select-wrap">
+                <input id="ma-erp" type="number" min="1" max="4000" step="1" value="1" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="rp-erp">股权风险溢价分位滚动周期</label>
+              <div class="select-wrap">
+                <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
+              </div>
+            </div>
           </div>
 
           <div class="hint">
             <p class="hint-title">输入文件</p>
             <p class="hint-body">请在 <span class="path">input</span> 中放入：<span class="path">data_Ratio GDP.xlsx</span>、<span class="path">data_Ratio Volume.xlsx</span>、<span class="path">data_Ratio Securities Lend .xlsx</span></p>
-            <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（3 份清洗后的 CSV）。</p>
+            <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（清洗 CSV + 分位 CSV）。</p>
           </div>
         </div>
       </section>

@@ -1,11 +1,19 @@
 const erpButton = document.getElementById("erp");
 const rollingButton = document.getElementById("rolling");
 const intervalButton = document.getElementById("interval");
-const thermoCleanButton = document.getElementById("thermo-clean");
+const thermoPercentileButton = document.getElementById("thermo-percentile");
 const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
 const thermoStatusText = document.getElementById("thermo-status");
+const maGdpInput = document.getElementById("ma-gdp");
+const rpGdpInput = document.getElementById("rp-gdp");
+const maVolumeInput = document.getElementById("ma-volume");
+const rpVolumeInput = document.getElementById("rp-volume");
+const maSecuritiesInput = document.getElementById("ma-securities");
+const rpSecuritiesInput = document.getElementById("rp-securities");
+const maErpInput = document.getElementById("ma-erp");
+const rpErpInput = document.getElementById("rp-erp");
 
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
@@ -43,7 +51,15 @@ const updateControls = () => {
   intervalButton.disabled = isBusy || !isServiceAvailable;
   intervalStartInput.disabled = isBusy;
   intervalEndInput.disabled = isBusy;
-  thermoCleanButton.disabled = isBusy || !isServiceAvailable;
+  thermoPercentileButton.disabled = isBusy || !isServiceAvailable;
+  maGdpInput.disabled = isBusy;
+  rpGdpInput.disabled = isBusy;
+  maVolumeInput.disabled = isBusy;
+  rpVolumeInput.disabled = isBusy;
+  maSecuritiesInput.disabled = isBusy;
+  rpSecuritiesInput.disabled = isBusy;
+  maErpInput.disabled = isBusy;
+  rpErpInput.disabled = isBusy;
 };
 
 const checkService = async () => {
@@ -241,19 +257,49 @@ const setActivePanel = (name) => {
   pageTitle.textContent = isThermo ? "市场温度计" : "股权风险溢价（ERP）处理器";
 };
 
-const generateThermoClean = async () => {
+const parseIntInRange = (value, min, max, label) => {
+  const raw = String(value || "").trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    throw new Error(`${label} 必须为整数（${min}-${max}）。`);
+  }
+  if (n < min || n > max) {
+    throw new Error(`${label} 超出范围（${min}-${max}）。`);
+  }
+  return n;
+};
+
+const generateThermoPercentiles = async () => {
+  let payload;
+  try {
+    payload = {
+      moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
+      rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
+      moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
+      rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
+      moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
+      rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
+      moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
+      rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
+    };
+  } catch (error) {
+    showModal("参数错误", error.message);
+    return;
+  }
+
   isBusy = true;
   updateControls();
-  thermoStatusText.textContent = "正在导出市场温度计清洗数据...";
+  thermoStatusText.textContent = "正在导出市场温度计分位数据（包含清洗）...";
 
   try {
-    const data = await postJson("/api/thermometer/clean");
+    const data = await postJson("/api/thermometer/percentiles", payload);
     const outputs = data.outputs || {};
     const lines = [
       "已生成：",
       outputs.ratio_gdp_csv ? `- docs/data/${outputs.ratio_gdp_csv}` : null,
       outputs.ratio_volume_csv ? `- docs/data/${outputs.ratio_volume_csv}` : null,
       outputs.ratio_securities_lend_csv ? `- docs/data/${outputs.ratio_securities_lend_csv}` : null,
+      outputs.erp_csv ? `- docs/data/${outputs.erp_csv}` : null,
     ].filter(Boolean);
     thermoStatusText.textContent = "导出完成。";
     showModal("完成", lines.join("\n"));
@@ -269,7 +315,7 @@ const generateThermoClean = async () => {
 erpButton.addEventListener("click", generateErp);
 rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
-thermoCleanButton.addEventListener("click", generateThermoClean);
+thermoPercentileButton.addEventListener("click", generateThermoPercentiles);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {

@@ -181,6 +181,18 @@ input[type="date"]:focus {
   box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.12);
 }
 
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+}
+
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 button {
   font-family: inherit;
   border: none;
@@ -235,8 +247,13 @@ button:disabled {
 .actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
+}
+
+.status-row {
+  flex-basis: 100%;
+  margin-top: 6px;
 }
 
 .hint {

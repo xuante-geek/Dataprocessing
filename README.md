@@ -60,3 +60,15 @@
 - `data_Ratio GDP.xlsx` → `docs/data/Ratio_GDP.csv`
 - `data_Ratio Volume.xlsx` → `docs/data/Ratio_Volume.csv`
 - `data_Ratio Securities Lend .xlsx` → `docs/data/Ratio_Securities_Lend.csv`
+
+## Feature 8：市场温度计（分位）
+
+基于温度计三份指标与 ERP，支持对“平均移动”后的数值做滚动分位计算，并输出 4 份 CSV：
+- `docs/data/Ratio_GDP_Percentile.csv`
+- `docs/data/Ratio_Volume_Percentile.csv`
+- `docs/data/Ratio_Securities_Lend_Percentile.csv`
+- `docs/data/ERP_Percentile.csv`
+
+说明：分位列为空白的行会被删除（仅保留分位已计算完成的行）。
+
+`ERP_Percentile.csv` 额外包含 `十年期收益率`、`PE-TTM-S`、`收盘点位` 三列，便于后续关联使用。
