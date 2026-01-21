@@ -72,3 +72,12 @@
 说明：分位列为空白的行会被删除（仅保留分位已计算完成的行）。
 
 `ERP_Percentile.csv` 额外包含 `十年期收益率`、`PE-TTM-S`、`收盘点位` 三列，便于后续关联使用。
+
+## Feature 9：市场温度计（合并与温度）
+
+以 `市值/GDP` 的周频日期为基准，对齐并合并四个分位因子，并按权重计算市场温度，导出到：
+- `docs/data/Market_Thermometer.csv`
+
+温度计算：`市场温度 = (W_GDP*T1 + W_Volume*T2 + W_Securities*T3 + W_ERP*(100-T4)) / 100`（ERP 分位为反向指标）。
+
+`Market_Thermometer.csv` 默认对分位、市场温度、全A点位等列做 1 位小数输出，便于展示。

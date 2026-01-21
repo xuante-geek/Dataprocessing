@@ -193,6 +193,26 @@ input[type="date"]:focus {
   }
 }
 
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
 button {
   font-family: inherit;
   border: none;

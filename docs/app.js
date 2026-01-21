@@ -2,10 +2,12 @@ const erpButton = document.getElementById("erp");
 const rollingButton = document.getElementById("rolling");
 const intervalButton = document.getElementById("interval");
 const thermoPercentileButton = document.getElementById("thermo-percentile");
+const thermoMergeButton = document.getElementById("thermo-merge");
 const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
 const thermoStatusText = document.getElementById("thermo-status");
+const thermoMergeStatusText = document.getElementById("thermo-merge-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
 const maVolumeInput = document.getElementById("ma-volume");
@@ -14,6 +16,15 @@ const maSecuritiesInput = document.getElementById("ma-securities");
 const rpSecuritiesInput = document.getElementById("rp-securities");
 const maErpInput = document.getElementById("ma-erp");
 const rpErpInput = document.getElementById("rp-erp");
+const wGdpInput = document.getElementById("w-gdp");
+const wVolumeInput = document.getElementById("w-volume");
+const wSecuritiesInput = document.getElementById("w-securities");
+const wErpInput = document.getElementById("w-erp");
+const colGdp = document.getElementById("col-gdp");
+const colVolume = document.getElementById("col-volume");
+const colSecurities = document.getElementById("col-securities");
+const colErp = document.getElementById("col-erp");
+const colYield = document.getElementById("col-yield");
 
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
@@ -52,6 +63,7 @@ const updateControls = () => {
   intervalStartInput.disabled = isBusy;
   intervalEndInput.disabled = isBusy;
   thermoPercentileButton.disabled = isBusy || !isServiceAvailable;
+  thermoMergeButton.disabled = isBusy || !isServiceAvailable;
   maGdpInput.disabled = isBusy;
   rpGdpInput.disabled = isBusy;
   maVolumeInput.disabled = isBusy;
@@ -60,6 +72,15 @@ const updateControls = () => {
   rpSecuritiesInput.disabled = isBusy;
   maErpInput.disabled = isBusy;
   rpErpInput.disabled = isBusy;
+  wGdpInput.disabled = isBusy;
+  wVolumeInput.disabled = isBusy;
+  wSecuritiesInput.disabled = isBusy;
+  wErpInput.disabled = isBusy;
+  colGdp.disabled = isBusy;
+  colVolume.disabled = isBusy;
+  colSecurities.disabled = isBusy;
+  colErp.disabled = isBusy;
+  colYield.disabled = isBusy;
 };
 
 const checkService = async () => {
@@ -312,10 +333,80 @@ const generateThermoPercentiles = async () => {
   }
 };
 
+const parseFloatInRange = (value, min, max, label) => {
+  const raw = String(value ?? "").trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n)) {
+    throw new Error(`${label} 必须为数值（${min}-${max}）。`);
+  }
+  if (n < min || n > max) {
+    throw new Error(`${label} 超出范围（${min}-${max}）。`);
+  }
+  return n;
+};
+
+const generateThermoMerge = async () => {
+  let payload;
+  try {
+    payload = {
+      moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
+      rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
+      moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
+      rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
+      moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
+      rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
+      moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
+      rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
+
+      weight_gdp: parseFloatInRange(wGdpInput.value, 0, 100, "权重：市值/GDP（%）"),
+      weight_volume: parseFloatInRange(wVolumeInput.value, 0, 100, "权重：成交量/市值（%）"),
+      weight_securities_lend: parseFloatInRange(wSecuritiesInput.value, 0, 100, "权重：融资融券/市值（%）"),
+      weight_erp: parseFloatInRange(wErpInput.value, 0, 100, "权重：股权风险溢价分位（%）"),
+
+      include_gdp_percentile: Boolean(colGdp.checked),
+      include_volume_percentile: Boolean(colVolume.checked),
+      include_securities_percentile: Boolean(colSecurities.checked),
+      include_erp: Boolean(colErp.checked),
+      include_bond_yield: Boolean(colYield.checked),
+    };
+    const sum =
+      payload.weight_gdp + payload.weight_volume + payload.weight_securities_lend + payload.weight_erp;
+    if (sum > 100.000001) {
+      throw new Error("权重之和不能超过 100%。");
+    }
+  } catch (error) {
+    showModal("参数错误", error.message);
+    return;
+  }
+
+  isBusy = true;
+  updateControls();
+  thermoMergeStatusText.textContent = "正在导出市场温度计总表...";
+
+  try {
+    const data = await postJson("/api/thermometer/merge", payload);
+    thermoMergeStatusText.textContent = "导出完成。";
+    const lines = [
+      "已生成：",
+      data.output_csv ? `- docs/data/${data.output_csv}` : null,
+      data.date_begin_used ? `起始日期：${data.date_begin_used}` : null,
+      data.date_end ? `结束日期：${data.date_end}` : null,
+    ].filter(Boolean);
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    thermoMergeStatusText.textContent = "导出失败。";
+    showModal("导出失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 erpButton.addEventListener("click", generateErp);
 rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
 thermoPercentileButton.addEventListener("click", generateThermoPercentiles);
+thermoMergeButton.addEventListener("click", generateThermoMerge);
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {

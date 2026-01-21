@@ -74,7 +74,7 @@
             <div class="control">
               <label for="rp-gdp">总市值/GDP分位滚动周期（周频）</label>
               <div class="select-wrap">
-                <input id="rp-gdp" type="number" min="1" max="1000" step="1" value="260" />
+                <input id="rp-gdp" type="number" min="1" max="1000" step="1" value="500" />
               </div>
             </div>
 
@@ -87,7 +87,7 @@
             <div class="control">
               <label for="rp-volume">成交量/总市值分位滚动周期</label>
               <div class="select-wrap">
-                <input id="rp-volume" type="number" min="1" max="4000" step="1" value="2000" />
+                <input id="rp-volume" type="number" min="1" max="4000" step="1" value="1000" />
               </div>
             </div>
 
@@ -100,7 +100,7 @@
             <div class="control">
               <label for="rp-securities">融资融券/总市值分位滚动周期</label>
               <div class="select-wrap">
-                <input id="rp-securities" type="number" min="1" max="4000" step="1" value="2000" />
+                <input id="rp-securities" type="number" min="1" max="4000" step="1" value="1000" />
               </div>
             </div>
 
@@ -115,6 +115,56 @@
               <div class="select-wrap">
                 <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
               </div>
+            </div>
+          </div>
+
+          <div class="hint">
+            <p class="hint-title">市场温度计总表（Feature 9）</p>
+            <p class="hint-body">以 <span class="path">市值/GDP</span> 周频日期为基准，对齐其它分位并计算市场温度。</p>
+          </div>
+
+          <div class="grid">
+            <div class="control">
+              <label for="w-gdp">权重：市值/GDP（%）</label>
+              <div class="select-wrap">
+                <input id="w-gdp" type="number" min="0" max="100" step="1" value="20" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="w-volume">权重：成交量/市值（%）</label>
+              <div class="select-wrap">
+                <input id="w-volume" type="number" min="0" max="100" step="1" value="20" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="w-securities">权重：融资融券/市值（%）</label>
+              <div class="select-wrap">
+                <input id="w-securities" type="number" min="0" max="100" step="1" value="20" />
+              </div>
+            </div>
+            <div class="control">
+              <label for="w-erp">权重：股权风险溢价分位（%）</label>
+              <div class="select-wrap">
+                <input id="w-erp" type="number" min="0" max="100" step="1" value="40" />
+              </div>
+            </div>
+          </div>
+
+          <div class="control">
+            <label>可选导出列</label>
+            <div class="checks">
+              <label class="check"><input id="col-gdp" type="checkbox" checked>市值/GDP分位</label>
+              <label class="check"><input id="col-volume" type="checkbox" checked>成交量/市值分位</label>
+              <label class="check"><input id="col-securities" type="checkbox" checked>融资融券/市值分位</label>
+              <label class="check"><input id="col-erp" type="checkbox" checked>股权风险溢价</label>
+              <label class="check"><input id="col-yield" type="checkbox" checked>十年国债收益率</label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="thermo-merge" type="button" class="action-btn">导出市场温度计总表</button>
+            <div class="status-row">
+              <span id="thermo-merge-status" class="status" aria-live="polite"></span>
             </div>
           </div>
 

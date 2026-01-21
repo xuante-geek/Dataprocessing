@@ -447,6 +447,68 @@ def _load_erp_series() -> tuple[list[str], list[float], list[float], list[float]
     return dates, erp_values, bond_yield_values, pe_values, close_values
 
 
+def _nearest_index(dates: list[dt.date], target: dt.date) -> int:
+    if not dates:
+        raise ValueError("日期序列为空")
+    index = bisect_left(dates, target)
+    if index <= 0:
+        return 0
+    if index >= len(dates):
+        return len(dates) - 1
+    before = dates[index - 1]
+    after = dates[index]
+    diff_before = abs((target - before).days)
+    diff_after = abs((after - target).days)
+    if diff_before <= diff_after:
+        return index - 1
+    return index
+
+
+def _build_percentile_records(
+    dates: list[str],
+    values: list[float],
+    *,
+    ma_window: int,
+    rp_window: int,
+) -> list[tuple[dt.date, float]]:
+    ma_values = _moving_average(values, ma_window)
+    pct_values = _rolling_percentiles(ma_values, rp_window)
+    out: list[tuple[dt.date, float]] = []
+    for index, date_text in enumerate(dates):
+        pct = pct_values[index]
+        if pct is None:
+            continue
+        out.append((dt.date.fromisoformat(date_text), float(pct)))
+    return out
+
+
+def _build_erp_percentile_records(
+    dates: list[str],
+    erp_values: list[float],
+    yields: list[float],
+    closes: list[float],
+    *,
+    ma_window: int,
+    rp_window: int,
+) -> list[dict[str, object]]:
+    ma_values = _moving_average(erp_values, ma_window)
+    pct_values = _rolling_percentiles(ma_values, rp_window)
+    out: list[dict[str, object]] = []
+    for index, date_text in enumerate(dates):
+        pct = pct_values[index]
+        if pct is None:
+            continue
+        out.append(
+            {
+                "date": dt.date.fromisoformat(date_text),
+                "erp_percentile": float(pct),
+                "erp": float(erp_values[index]),
+                "yield": float(yields[index]),
+                "close": float(closes[index]),
+            }
+        )
+    return out
+
 def _process_data_pe(source_path: Path) -> list[tuple[dt.date, float, float]]:
     workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
     sheet_name = workbook.sheetnames[0] if workbook.sheetnames else None
@@ -1231,6 +1293,211 @@ def generate_thermometer_percentiles() -> object:
                     "ratio_securities_lend_csv": outputs["ratio_securities_lend"],
                     "erp_csv": outputs["erp"],
                 }
+            }
+        )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/thermometer/merge")
+def generate_thermometer_merge() -> object:
+    payload = request.get_json(silent=True) or {}
+
+    def get_int(name: str, *, min_value: int, max_value: int) -> int:
+        raw = payload.get(name)
+        if isinstance(raw, str):
+            raw = raw.strip()
+            if not raw:
+                raise ValueError(f"缺少参数：{name}")
+            try:
+                raw = int(raw)
+            except ValueError as exc:
+                raise ValueError(f"{name} 必须为整数") from exc
+        if not isinstance(raw, int):
+            raise ValueError(f"{name} 必须为整数")
+        if raw < min_value or raw > max_value:
+            raise ValueError(f"{name} 超出范围（{min_value}-{max_value}）")
+        return raw
+
+    def get_weight(name: str) -> float:
+        raw = payload.get(name)
+        if isinstance(raw, str):
+            raw = raw.strip()
+        try:
+            value = float(raw)
+        except Exception as exc:
+            raise ValueError(f"{name} 必须为数值") from exc
+        if value < 0 or value > 100:
+            raise ValueError(f"{name} 超出范围（0-100）")
+        return value
+
+    def get_bool(name: str, default: bool) -> bool:
+        raw = payload.get(name)
+        if raw is None:
+            return default
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in ("1", "true", "yes", "y", "on"):
+                return True
+            if text in ("0", "false", "no", "n", "off"):
+                return False
+        raise ValueError(f"{name} 必须为布尔值")
+
+    try:
+        ma_gdp = get_int("moving_average_gdp", min_value=1, max_value=1000)
+        rp_gdp = get_int("rolling_period_gdp", min_value=1, max_value=1000)
+        ma_volume = get_int("moving_average_volume", min_value=1, max_value=4000)
+        rp_volume = get_int("rolling_period_volume", min_value=1, max_value=4000)
+        ma_securities = get_int("moving_average_securities", min_value=1, max_value=4000)
+        rp_securities = get_int("rolling_period_securities", min_value=1, max_value=4000)
+        ma_erp = get_int("moving_erp", min_value=1, max_value=4000)
+        rp_erp = get_int("rolling_period_erp", min_value=1, max_value=4000)
+
+        weight_gdp = get_weight("weight_gdp")
+        weight_volume = get_weight("weight_volume")
+        weight_securities = get_weight("weight_securities_lend")
+        weight_erp = get_weight("weight_erp")
+        weight_sum = weight_gdp + weight_volume + weight_securities + weight_erp
+        if weight_sum > 100.0 + 1e-9:
+            raise ValueError("权重之和不能超过 100%")
+
+        include_gdp = get_bool("include_gdp_percentile", True)
+        include_volume = get_bool("include_volume_percentile", True)
+        include_securities = get_bool("include_securities_percentile", True)
+        include_erp = get_bool("include_erp", True)
+        include_yield = get_bool("include_bond_yield", True)
+
+        gdp_path = _find_input_xlsx("data_Ratio GDP")
+        volume_path = _find_input_xlsx("data_Ratio Volume")
+        lend_path = _find_input_xlsx("data_Ratio Securities Lend")
+
+        gdp_dates, gdp_values = _load_ratio_series(gdp_path)
+        vol_dates, vol_values = _load_ratio_series(volume_path)
+        sec_dates, sec_values = _load_ratio_series(lend_path)
+        erp_dates, erp_values, erp_yields, _, erp_closes = _load_erp_series()
+
+        gdp_records = _build_percentile_records(gdp_dates, gdp_values, ma_window=ma_gdp, rp_window=rp_gdp)
+        vol_records = _build_percentile_records(vol_dates, vol_values, ma_window=ma_volume, rp_window=rp_volume)
+        sec_records = _build_percentile_records(sec_dates, sec_values, ma_window=ma_securities, rp_window=rp_securities)
+        erp_records = _build_erp_percentile_records(
+            erp_dates,
+            erp_values,
+            erp_yields,
+            erp_closes,
+            ma_window=ma_erp,
+            rp_window=rp_erp,
+        )
+
+        if not (gdp_records and vol_records and sec_records and erp_records):
+            raise ValueError("数据不足：请检查移动平均与滚动周期参数是否过大")
+
+        vol_start = vol_records[0][0]
+        sec_start = sec_records[0][0]
+        erp_start = erp_records[0]["date"]  # type: ignore[assignment]
+        assert isinstance(erp_start, dt.date)
+
+        date_begin = max(vol_start, sec_start, erp_start)
+        gdp_dates_only = [d for d, _ in gdp_records]
+        gdp_start_index = _nearest_index(gdp_dates_only, date_begin)
+        start_date_used = gdp_dates_only[gdp_start_index]
+
+        vol_end = vol_records[-1][0]
+        sec_end = sec_records[-1][0]
+        erp_end = erp_records[-1]["date"]  # type: ignore[assignment]
+        assert isinstance(erp_end, dt.date)
+        gdp_end = gdp_dates_only[-1]
+        date_end = min(gdp_end, vol_end, sec_end, erp_end)
+        gdp_end_index = bisect_right(gdp_dates_only, date_end) - 1
+        if gdp_end_index < gdp_start_index:
+            raise ValueError("合并失败：有效时间区间为空")
+
+        vol_dates_only = [d for d, _ in vol_records]
+        sec_dates_only = [d for d, _ in sec_records]
+        erp_dates_only = [record["date"] for record in erp_records]
+        assert all(isinstance(d, dt.date) for d in erp_dates_only)
+        erp_dates_only_typed: list[dt.date] = [d for d in erp_dates_only if isinstance(d, dt.date)]
+
+        header = ["日期", "股权风险溢价分位", "全A点位", "市场温度"]
+        if include_gdp:
+            header.insert(1, "市值/GDP分位")
+        if include_volume:
+            header.insert(2 if include_gdp else 1, "成交量/市值分位")
+        if include_securities:
+            insert_at = 3 if include_gdp and include_volume else 2 if (include_gdp or include_volume) else 1
+            header.insert(insert_at, "融资融券/市值分位")
+        if include_erp:
+            header.append("股权风险溢价")
+        if include_yield:
+            header.append("十年国债收益率")
+
+        rows: list[list[object]] = [header]
+        one_decimal_columns = {
+            "市值/GDP分位",
+            "成交量/市值分位",
+            "融资融券/市值分位",
+            "股权风险溢价分位",
+            "市场温度",
+            "全A点位",
+        }
+
+        def _get_percentile(records: list[tuple[dt.date, float]], dates_only: list[dt.date], target: dt.date) -> float:
+            idx = _nearest_index(dates_only, target)
+            return float(records[idx][1])
+
+        for gdp_idx in range(gdp_start_index, gdp_end_index + 1):
+            date_value = gdp_dates_only[gdp_idx]
+            gdp_pct = float(gdp_records[gdp_idx][1])
+            vol_pct = _get_percentile(vol_records, vol_dates_only, date_value)
+            sec_pct = _get_percentile(sec_records, sec_dates_only, date_value)
+
+            erp_idx = _nearest_index(erp_dates_only_typed, date_value)
+            erp_record = erp_records[erp_idx]
+            erp_pct = float(erp_record["erp_percentile"])
+            close_value = float(erp_record["close"])
+            erp_value = float(erp_record["erp"])
+            yield_value = float(erp_record["yield"])
+
+            temperature = (
+                weight_gdp * gdp_pct
+                + weight_volume * vol_pct
+                + weight_securities * sec_pct
+                + weight_erp * (100.0 - erp_pct)
+            ) / 100.0
+
+            row: dict[str, object] = {
+                "日期": date_value.isoformat(),
+                "市值/GDP分位": gdp_pct,
+                "成交量/市值分位": vol_pct,
+                "融资融券/市值分位": sec_pct,
+                "股权风险溢价分位": erp_pct,
+                "股权风险溢价": erp_value,
+                "十年国债收益率": yield_value,
+                "全A点位": close_value,
+                "市场温度": temperature,
+            }
+            output_row: list[object] = []
+            for col in header:
+                value = row.get(col, "")
+                if col in one_decimal_columns and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    value = round(float(value), 1)
+                output_row.append(value)
+            rows.append(output_row)
+
+        output_name = "Market_Thermometer.csv"
+        _write_csv(rows, OUTPUT_DIR / output_name)
+        return jsonify(
+            {
+                "output_csv": output_name,
+                "date_begin": date_begin.isoformat(),
+                "date_begin_used": start_date_used.isoformat(),
+                "date_end": date_end.isoformat(),
+                "columns": header,
             }
         )
     except FileNotFoundError as exc:
