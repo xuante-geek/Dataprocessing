@@ -11,7 +11,7 @@
       <header class="hero">
         <p class="eyebrow">DataProcessing</p>
         <h1 id="page-title">股权风险溢价（ERP）处理器</h1>
-        <p class="subhead">一键生成 ERP 数据文件。</p>
+        <p id="hero-status" class="subhead"></p>
       </header>
 
       <section class="panel">
@@ -21,157 +21,147 @@
         </div>
 
         <div id="panel-erp" class="panel-body">
-          <div class="actions">
-            <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>
-            <button id="rolling" type="button" class="action-btn">导出滚动周期 ERP</button>
-            <button id="interval" type="button" class="action-btn">导出指定周期 ERP</button>
+          <div class="erp-grid">
+            <div class="erp-col">
+              <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>
+            </div>
+
+            <div class="erp-col">
+              <button id="rolling" type="button" class="action-btn">导出滚动周期 ERP</button>
+              <div class="control">
+                <label for="rolling-n">滚动周期 n（交易日）</label>
+                <div class="select-wrap">
+                  <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
+                </div>
+              </div>
+            </div>
+
+            <div class="erp-col">
+              <button id="interval" type="button" class="action-btn">导出指定周期 ERP</button>
+              <div class="control">
+                <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
+                <div class="select-wrap">
+                  <input id="interval-start" type="date" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="interval-end">固定区间终止日期（YYYY-MM-DD）</label>
+                <div class="select-wrap">
+                  <input id="interval-end" type="date" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-row">
             <span id="status" class="status" aria-live="polite"></span>
-          </div>
-
-          <div class="control">
-            <label for="rolling-n">滚动周期 n（交易日）</label>
-            <div class="select-wrap">
-              <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
-            </div>
-          </div>
-
-          <div class="control">
-            <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
-            <div class="select-wrap">
-              <input id="interval-start" type="date" />
-            </div>
-          </div>
-
-          <div class="control">
-            <label for="interval-end">固定区间终止日期（YYYY-MM-DD）</label>
-            <div class="select-wrap">
-              <input id="interval-end" type="date" />
-            </div>
           </div>
 
           <div class="hint">
             <p class="hint-title">说明</p>
-            <p class="hint-body">滚动周期用于计算布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
+            <p class="hint-body">滚动周期用于计算滚动时间窗口内的动态布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
             <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>（同时生成同名 Excel）。</p>
           </div>
         </div>
 
         <div id="panel-thermo" class="panel-body hidden">
-          <div class="actions">
+          <div class="actions thermo-actions">
             <button id="thermo-percentile" type="button" class="action-btn">导出市场温度计分位数据</button>
+            <button id="thermo-merge" type="button" class="action-btn">导出市场温度计总表</button>
             <div class="status-row">
               <span id="thermo-status" class="status" aria-live="polite"></span>
             </div>
           </div>
 
-          <div class="grid">
-            <div class="control">
-              <label for="ma-gdp">总市值/GDP平均移动（周频）</label>
-              <div class="select-wrap">
-                <input id="ma-gdp" type="number" min="1" max="1000" step="1" value="1" />
+          <div class="thermo-stack">
+            <div class="thermo-factor-grid">
+              <div class="control">
+                <label for="ma-gdp">总市值/GDP平均移动（周频）</label>
+                <div class="select-wrap">
+                  <input id="ma-gdp" type="number" min="1" max="1000" step="1" value="1" />
+                </div>
               </div>
-            </div>
-            <div class="control">
-              <label for="rp-gdp">总市值/GDP分位滚动周期（周频）</label>
-              <div class="select-wrap">
-                <input id="rp-gdp" type="number" min="1" max="1000" step="1" value="500" />
+              <div class="control">
+                <label for="rp-gdp">总市值/GDP分位滚动周期（周频）</label>
+                <div class="select-wrap">
+                  <input id="rp-gdp" type="number" min="1" max="1000" step="1" value="500" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="w-gdp">权重：市值/GDP（%）</label>
+                <div class="select-wrap">
+                  <input id="w-gdp" type="number" min="0" max="100" step="1" value="20" />
+                </div>
+              </div>
+
+              <div class="control">
+                <label for="ma-volume">成交量平均移动</label>
+                <div class="select-wrap">
+                  <input id="ma-volume" type="number" min="1" max="4000" step="1" value="1" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="rp-volume">成交量/总市值分位滚动周期</label>
+                <div class="select-wrap">
+                  <input id="rp-volume" type="number" min="1" max="4000" step="1" value="1000" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="w-volume">权重：成交量/市值（%）</label>
+                <div class="select-wrap">
+                  <input id="w-volume" type="number" min="0" max="100" step="1" value="20" />
+                </div>
+              </div>
+
+              <div class="control">
+                <label for="ma-securities">融资融券平均移动</label>
+                <div class="select-wrap">
+                  <input id="ma-securities" type="number" min="1" max="4000" step="1" value="1" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="rp-securities">融资融券/总市值分位滚动周期</label>
+                <div class="select-wrap">
+                  <input id="rp-securities" type="number" min="1" max="4000" step="1" value="1000" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="w-securities">权重：融资融券/市值（%）</label>
+                <div class="select-wrap">
+                  <input id="w-securities" type="number" min="0" max="100" step="1" value="20" />
+                </div>
+              </div>
+
+              <div class="control">
+                <label for="ma-erp">股权风险溢价平均移动</label>
+                <div class="select-wrap">
+                  <input id="ma-erp" type="number" min="1" max="4000" step="1" value="1" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="rp-erp">股权风险溢价分位滚动周期</label>
+                <div class="select-wrap">
+                  <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="w-erp">权重：股权风险溢价分位（%）</label>
+                <div class="select-wrap">
+                  <input id="w-erp" type="number" min="0" max="100" step="1" value="40" />
+                </div>
               </div>
             </div>
 
             <div class="control">
-              <label for="ma-volume">成交量平均移动</label>
-              <div class="select-wrap">
-                <input id="ma-volume" type="number" min="1" max="4000" step="1" value="1" />
+              <label>可选导出列</label>
+              <div class="checks">
+                <label class="check"><input id="col-gdp" type="checkbox" checked>市值/GDP分位</label>
+                <label class="check"><input id="col-volume" type="checkbox" checked>成交量/市值分位</label>
+                <label class="check"><input id="col-securities" type="checkbox" checked>融资融券/市值分位</label>
+                <label class="check"><input id="col-erp" type="checkbox" checked>股权风险溢价</label>
+                <label class="check"><input id="col-yield" type="checkbox" checked>十年国债收益率</label>
               </div>
             </div>
-            <div class="control">
-              <label for="rp-volume">成交量/总市值分位滚动周期</label>
-              <div class="select-wrap">
-                <input id="rp-volume" type="number" min="1" max="4000" step="1" value="1000" />
-              </div>
-            </div>
-
-            <div class="control">
-              <label for="ma-securities">融资融券平均移动</label>
-              <div class="select-wrap">
-                <input id="ma-securities" type="number" min="1" max="4000" step="1" value="1" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="rp-securities">融资融券/总市值分位滚动周期</label>
-              <div class="select-wrap">
-                <input id="rp-securities" type="number" min="1" max="4000" step="1" value="1000" />
-              </div>
-            </div>
-
-            <div class="control">
-              <label for="ma-erp">股权风险溢价平均移动</label>
-              <div class="select-wrap">
-                <input id="ma-erp" type="number" min="1" max="4000" step="1" value="1" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="rp-erp">股权风险溢价分位滚动周期</label>
-              <div class="select-wrap">
-                <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
-              </div>
-            </div>
-          </div>
-
-          <div class="hint">
-            <p class="hint-title">市场温度计总表（Feature 9）</p>
-            <p class="hint-body">以 <span class="path">市值/GDP</span> 周频日期为基准，对齐其它分位并计算市场温度。</p>
-          </div>
-
-          <div class="grid">
-            <div class="control">
-              <label for="w-gdp">权重：市值/GDP（%）</label>
-              <div class="select-wrap">
-                <input id="w-gdp" type="number" min="0" max="100" step="1" value="20" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="w-volume">权重：成交量/市值（%）</label>
-              <div class="select-wrap">
-                <input id="w-volume" type="number" min="0" max="100" step="1" value="20" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="w-securities">权重：融资融券/市值（%）</label>
-              <div class="select-wrap">
-                <input id="w-securities" type="number" min="0" max="100" step="1" value="20" />
-              </div>
-            </div>
-            <div class="control">
-              <label for="w-erp">权重：股权风险溢价分位（%）</label>
-              <div class="select-wrap">
-                <input id="w-erp" type="number" min="0" max="100" step="1" value="40" />
-              </div>
-            </div>
-          </div>
-
-          <div class="control">
-            <label>可选导出列</label>
-            <div class="checks">
-              <label class="check"><input id="col-gdp" type="checkbox" checked>市值/GDP分位</label>
-              <label class="check"><input id="col-volume" type="checkbox" checked>成交量/市值分位</label>
-              <label class="check"><input id="col-securities" type="checkbox" checked>融资融券/市值分位</label>
-              <label class="check"><input id="col-erp" type="checkbox" checked>股权风险溢价</label>
-              <label class="check"><input id="col-yield" type="checkbox" checked>十年国债收益率</label>
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="thermo-merge" type="button" class="action-btn">导出市场温度计总表</button>
-            <div class="status-row">
-              <span id="thermo-merge-status" class="status" aria-live="polite"></span>
-            </div>
-          </div>
-
-          <div class="hint">
-            <p class="hint-title">输入文件</p>
-            <p class="hint-body">请在 <span class="path">input</span> 中放入：<span class="path">data_Ratio GDP.xlsx</span>、<span class="path">data_Ratio Volume.xlsx</span>、<span class="path">data_Ratio Securities Lend .xlsx</span></p>
-            <p class="hint-body">输出将生成在 <span class="path">docs/data</span>（清洗 CSV + 分位 CSV）。</p>
           </div>
         </div>
       </section>

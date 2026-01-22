@@ -7,7 +7,6 @@ const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
 const thermoStatusText = document.getElementById("thermo-status");
-const thermoMergeStatusText = document.getElementById("thermo-merge-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
 const maVolumeInput = document.getElementById("ma-volume");
@@ -32,6 +31,7 @@ const modalTitle = document.getElementById("modal-title");
 const modalMessage = document.getElementById("modal-message");
 const modalClose = document.getElementById("modal-close");
 const pageTitle = document.getElementById("page-title");
+const heroStatusText = document.getElementById("hero-status");
 
 const tabErp = document.getElementById("tab-erp");
 const tabThermo = document.getElementById("tab-thermo");
@@ -43,6 +43,11 @@ let isServiceAvailable = false;
 
 const setStatus = (message) => {
   statusText.textContent = message;
+};
+
+const setHeroStatus = (message) => {
+  if (!heroStatusText) return;
+  heroStatusText.textContent = message;
 };
 
 const showModal = (title, message) => {
@@ -87,6 +92,7 @@ const checkService = async () => {
   if (window.location.protocol === "file:") {
     isServiceAvailable = false;
     updateControls();
+    setHeroStatus("本地服务未连接（请先运行 python src/app.py）。");
     setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5000");
     showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5000");
     return;
@@ -94,7 +100,8 @@ const checkService = async () => {
 
   isBusy = true;
   updateControls();
-  setStatus("正在检查本地服务...");
+  setHeroStatus("正在连接本地服务...");
+  setStatus("");
 
   try {
     const response = await fetch("/api/files");
@@ -102,12 +109,13 @@ const checkService = async () => {
       throw new Error("本地服务不可用。");
     }
     isServiceAvailable = true;
-    setStatus("本地服务已连接，可以开始生成。");
-    thermoStatusText.textContent = "本地服务已连接，可以开始导出。";
+    setHeroStatus("本地服务已连接，可以开始生成。");
+    thermoStatusText.textContent = "";
   } catch (error) {
     isServiceAvailable = false;
+    setHeroStatus("本地服务未连接（请确认已运行 python src/app.py）。");
     setStatus("本地服务未连接（请确认已运行 python src/app.py）。");
-    thermoStatusText.textContent = "本地服务未连接。";
+    thermoStatusText.textContent = "";
     showModal("连接失败", "无法连接本地服务，请先运行：python src/app.py");
   } finally {
     isBusy = false;
@@ -381,11 +389,11 @@ const generateThermoMerge = async () => {
 
   isBusy = true;
   updateControls();
-  thermoMergeStatusText.textContent = "正在导出市场温度计总表...";
+  thermoStatusText.textContent = "正在导出市场温度计总表...";
 
   try {
     const data = await postJson("/api/thermometer/merge", payload);
-    thermoMergeStatusText.textContent = "导出完成。";
+    thermoStatusText.textContent = "导出完成。";
     const lines = [
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
@@ -394,7 +402,7 @@ const generateThermoMerge = async () => {
     ].filter(Boolean);
     showModal("完成", lines.join("\n"));
   } catch (error) {
-    thermoMergeStatusText.textContent = "导出失败。";
+    thermoStatusText.textContent = "导出失败。";
     showModal("导出失败", error.message);
   } finally {
     isBusy = false;

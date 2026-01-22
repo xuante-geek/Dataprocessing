@@ -74,7 +74,7 @@ h1 {
   box-shadow: var(--shadow);
   padding: 28px;
   display: grid;
-  gap: 24px;
+  gap: 28px;
 }
 
 .tabs {
@@ -107,9 +107,40 @@ h1 {
   display: none;
 }
 
+.erp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 26px;
+  align-items: start;
+}
+
+.erp-col {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+}
+
+.erp-grid .action-btn {
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 16px;
+}
+
+.erp-col .control {
+  gap: 8px;
+}
+
+.erp-col label {
+  text-align: left;
+}
+
+.erp-col .select-wrap {
+  gap: 8px;
+}
+
 .control {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 label {
@@ -184,10 +215,14 @@ input[type="date"]:focus {
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 18px;
+  gap: 20px 24px;
 }
 
 @media (max-width: 700px) {
+  .erp-grid {
+    grid-template-columns: 1fr;
+  }
+
   .grid {
     grid-template-columns: 1fr;
   }
@@ -224,21 +259,19 @@ button {
 }
 
 .action-btn {
-  background: rgba(15, 118, 110, 0.1);
-  color: var(--accent-dark);
-  border: 1px solid rgba(15, 118, 110, 0.22);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-}
-
-.action-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.12);
   background: rgba(15, 118, 110, 0.14);
+  color: var(--accent-dark);
+  font-weight: 650;
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  box-shadow:
+    0 4px 9px rgba(15, 23, 42, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
 }
 
 .action-btn:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 3px 7px rgba(15, 23, 42, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.55) inset;
 }
 
 button:disabled {
@@ -268,12 +301,34 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 16px;
+  gap: 18px;
+}
+
+.thermo-actions {
+  margin-bottom: 10px;
+}
+
+.thermo-stack {
+  display: grid;
+  gap: 34px;
+}
+
+.thermo-factor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px 22px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .thermo-factor-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .status-row {
   flex-basis: 100%;
-  margin-top: 6px;
+  margin-top: 10px;
 }
 
 .hint {
