@@ -146,9 +146,10 @@ const generateErp = async () => {
     const outputs = data.outputs || {};
     const lines = [
       "已生成：",
-      outputs.erp_csv ? `- docs/data/${outputs.erp_csv}` : null,
-      outputs.erp_xlsx ? `- docs/data/${outputs.erp_xlsx}` : null,
+      outputs.data_PE_clean_csv ? `- docs/data/${outputs.data_PE_clean_csv}` : null,
+      outputs.data_bond_clean_csv ? `- docs/data/${outputs.data_bond_clean_csv}` : null,
       outputs.merged_csv ? `- docs/data/${outputs.merged_csv}` : null,
+      outputs.erp_csv ? `- docs/data/${outputs.erp_csv}` : null,
     ].filter(Boolean);
 
     setStatus("导出完成。");
@@ -193,7 +194,6 @@ const generateRolling = async () => {
       `n = ${data.n}`,
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
-      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
     ].filter(Boolean);
 
     setStatus("导出完成。");
@@ -261,7 +261,6 @@ const generateInterval = async () => {
       `有效区间：${data.used_start_date} → ${data.used_end_date}`,
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
-      data.output_xlsx ? `- docs/data/${data.output_xlsx}` : null,
     ].filter(Boolean);
 
     setStatus("固定区间生成完成。");

@@ -666,7 +666,7 @@ def _compute_erp_rows(
     bond_rows: list[tuple[dt.date, float, float]],
 ) -> list[list[object]]:
     bond_decimal_by_date = {date: decimal for date, _, decimal in bond_rows}
-    output: list[list[object]] = [["日期", "十年期收益率", "PE-TTM-S", "收盘点位", "股权风险溢价"]]
+    output: list[list[object]] = [["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价"]]
 
     for date, yield_raw, pe_value, close_value in merged_rows:
         bond_yield_decimal = bond_decimal_by_date.get(date)
@@ -773,7 +773,7 @@ def _compute_erp_rolling_bands(
         raise ValueError(f"数据不足：至少需要 {window_size} 行交易日数据")
 
     output: list[list[object]] = [
-        ["日期", "十年期收益率", "PE-TTM-S", "收盘点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
+        ["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
     ]
 
     sorted_window: list[float] = []
@@ -889,7 +889,7 @@ def _compute_erp_interval_bands(
     lower2 = median - 2 * stddevp
 
     output: list[list[object]] = [
-        ["日期", "十年期收益率", "PE-TTM-S", "收盘点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
+        ["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
     ]
     for row in interval_rows:
         output.append([row[0], row[1], row[2], row[3], row[4], upper2, upper1, median, lower1, lower2])
@@ -956,44 +956,36 @@ def generate_erp() -> object:
         bond_rows = _process_data_bond(bond_path)
         merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
 
-        pe_clean_rows: list[list[object]] = [["日期", "PE-TTM-S", "收盘点位"]] + [
+        pe_clean_rows: list[list[object]] = [["日期", "PE-TTM-S", "全A点位"]] + [
             [date.isoformat(), pe, close] for date, pe, close in pe_rows
         ]
-        bond_clean_rows: list[list[object]] = [["日期", "十年期收益率"]] + [
+        bond_clean_rows: list[list[object]] = [["日期", "十年国债收益率"]] + [
             [date.isoformat(), yield_raw] for date, yield_raw, _ in bond_rows
         ]
-        merged_clean_rows: list[list[object]] = [["日期", "十年期收益率", "PE-TTM-S", "收盘点位"]] + [
+        merged_clean_rows: list[list[object]] = [["日期", "十年国债收益率", "PE-TTM-S", "全A点位"]] + [
             [date.isoformat(), yield_raw, pe, close] for date, yield_raw, pe, close in merged_rows
         ]
         erp_rows = _compute_erp_rows(merged_rows, bond_rows)
 
         output = {
-            "data_PE_clean": ("data_PE_clean.csv", "data_PE_clean.xlsx"),
-            "data_bond_clean": ("data_bond_clean.csv", "data_bond_clean.xlsx"),
-            "merged": ("merged.csv", "merged.xlsx"),
-            "erp": ("ERP.csv", "ERP.xlsx"),
+            "data_PE_clean": "data_PE_clean.csv",
+            "data_bond_clean": "data_bond_clean.csv",
+            "merged": "merged.csv",
+            "erp": "ERP.csv",
         }
 
-        _write_csv(pe_clean_rows, OUTPUT_DIR / output["data_PE_clean"][0])
-        _write_xlsx(pe_clean_rows, OUTPUT_DIR / output["data_PE_clean"][1], "data_PE_clean")
-        _write_csv(bond_clean_rows, OUTPUT_DIR / output["data_bond_clean"][0])
-        _write_xlsx(bond_clean_rows, OUTPUT_DIR / output["data_bond_clean"][1], "data_bond_clean")
-        _write_csv(merged_clean_rows, OUTPUT_DIR / output["merged"][0])
-        _write_xlsx(merged_clean_rows, OUTPUT_DIR / output["merged"][1], "merged")
-        _write_csv(erp_rows, OUTPUT_DIR / output["erp"][0])
-        _write_xlsx(erp_rows, OUTPUT_DIR / output["erp"][1], "ERP")
+        _write_csv(pe_clean_rows, OUTPUT_DIR / output["data_PE_clean"])
+        _write_csv(bond_clean_rows, OUTPUT_DIR / output["data_bond_clean"])
+        _write_csv(merged_clean_rows, OUTPUT_DIR / output["merged"])
+        _write_csv(erp_rows, OUTPUT_DIR / output["erp"])
 
         return jsonify(
             {
                 "outputs": {
-                    "data_PE_clean_csv": output["data_PE_clean"][0],
-                    "data_PE_clean_xlsx": output["data_PE_clean"][1],
-                    "data_bond_clean_csv": output["data_bond_clean"][0],
-                    "data_bond_clean_xlsx": output["data_bond_clean"][1],
-                    "merged_csv": output["merged"][0],
-                    "merged_xlsx": output["merged"][1],
-                    "erp_csv": output["erp"][0],
-                    "erp_xlsx": output["erp"][1],
+                    "data_PE_clean_csv": output["data_PE_clean"],
+                    "data_bond_clean_csv": output["data_bond_clean"],
+                    "merged_csv": output["merged"],
+                    "erp_csv": output["erp"],
                 }
             }
         )
@@ -1018,11 +1010,9 @@ def generate_erp_10year() -> object:
         bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=2000)
 
         csv_name = "ERP_10Year.csv"
-        xlsx_name = "ERP_10Year.xlsx"
         _write_csv(bands_rows, OUTPUT_DIR / csv_name)
-        _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_10Year")
 
-        return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name})
+        return jsonify({"output_csv": csv_name})
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1058,11 +1048,9 @@ def generate_erp_rolling() -> object:
         bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n)
 
         csv_name = "ERP_Rolling Calculation.csv"
-        xlsx_name = "ERP_Rolling Calculation.xlsx"
         _write_csv(bands_rows, OUTPUT_DIR / csv_name)
-        _write_xlsx(bands_rows, OUTPUT_DIR / xlsx_name, "ERP_Rolling Calculation")
 
-        return jsonify({"output_csv": csv_name, "output_xlsx": xlsx_name, "n": n})
+        return jsonify({"output_csv": csv_name, "n": n})
     except FileNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except ValueError as exc:
@@ -1108,16 +1096,13 @@ def generate_erp_interval() -> object:
         )
 
         csv_name = "ERP_Interval.csv"
-        xlsx_name = "ERP_Interval.xlsx"
         _write_csv(output_rows, OUTPUT_DIR / csv_name)
-        _write_xlsx(output_rows, OUTPUT_DIR / xlsx_name, "ERP_Interval")
 
         adjusted = actual_start != start_date
         adjusted_end = actual_end != end_date
         return jsonify(
             {
                 "output_csv": csv_name,
-                "output_xlsx": xlsx_name,
                 "input_start_date": start_date.isoformat(),
                 "used_start_date": actual_start.isoformat(),
                 "input_end_date": end_date.isoformat(),
@@ -1256,7 +1241,7 @@ def generate_thermometer_percentiles() -> object:
         erp_ma_values = _moving_average(erp_values, ma_erp)
         erp_pct_values = _rolling_percentiles(erp_ma_values, rp_erp)
         erp_out: list[list[object]] = [
-            ["日期", "股权风险溢价", "平均移动", "分位", "十年期收益率", "PE-TTM-S", "收盘点位"]
+            ["日期", "股权风险溢价", "平均移动", "分位", "十年国债收益率", "PE-TTM-S", "全A点位"]
         ]
         for index, date_text in enumerate(erp_dates):
             if erp_pct_values[index] is None:
