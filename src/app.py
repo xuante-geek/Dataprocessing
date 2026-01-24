@@ -758,6 +758,7 @@ def _compute_erp_rolling_bands(
     erp_rows: list[list[object]],
     *,
     window_size: int = 2000,
+    include_percentile: bool = False,
 ) -> list[list[object]]:
     if not isinstance(window_size, int) or window_size <= 0:
         raise ValueError("滚动窗口 n 必须为正整数")
@@ -772,9 +773,11 @@ def _compute_erp_rolling_bands(
     if len(data_rows) < window_size:
         raise ValueError(f"数据不足：至少需要 {window_size} 行交易日数据")
 
-    output: list[list[object]] = [
-        ["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
-    ]
+    header = ["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价"]
+    if include_percentile:
+        header.append("股权风险溢价分位")
+    header.extend(["+2σ", "+1σ", "中位数", "-1σ", "-2σ"])
+    output: list[list[object]] = [header]
 
     sorted_window: list[float] = []
     queue: deque[float] = deque()
@@ -811,7 +814,11 @@ def _compute_erp_rolling_bands(
         lower1 = median - stddevp
         lower2 = median - 2 * stddevp
 
-        output.append([row[0], row[1], row[2], row[3], erp_float, upper2, upper1, median, lower1, lower2])
+        row_out: list[object] = [row[0], row[1], row[2], row[3], erp_float]
+        if include_percentile:
+            row_out.append(round(_rolling_percentile(sorted_window, erp_float), 1))
+        row_out.extend([upper2, upper1, median, lower1, lower2])
+        output.append(row_out)
 
     return output
 
@@ -889,10 +896,24 @@ def _compute_erp_interval_bands(
     lower2 = median - 2 * stddevp
 
     output: list[list[object]] = [
-        ["日期", "十年国债收益率", "PE-TTM-S", "全A点位", "股权风险溢价", "+2σ", "+1σ", "中位数", "-1σ", "-2σ"]
+        [
+            "日期",
+            "十年国债收益率",
+            "PE-TTM-S",
+            "全A点位",
+            "股权风险溢价",
+            "股权风险溢价分位",
+            "+2σ",
+            "+1σ",
+            "中位数",
+            "-1σ",
+            "-2σ",
+        ]
     ]
     for row in interval_rows:
-        output.append([row[0], row[1], row[2], row[3], row[4], upper2, upper1, median, lower1, lower2])
+        erp_value = float(row[4])
+        percentile = round(_rolling_percentile(sorted_values, erp_value), 1)
+        output.append([row[0], row[1], row[2], row[3], erp_value, percentile, upper2, upper1, median, lower1, lower2])
 
     return earliest, latest, actual_start, actual_end, output, median, stddevp
 
@@ -1045,7 +1066,7 @@ def generate_erp_rolling() -> object:
         merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
         erp_rows = _compute_erp_rows(merged_rows, bond_rows)
 
-        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n)
+        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n, include_percentile=True)
 
         csv_name = "ERP_Rolling Calculation.csv"
         _write_csv(bands_rows, OUTPUT_DIR / csv_name)
@@ -1251,7 +1272,7 @@ def generate_thermometer_percentiles() -> object:
                     date_text,
                     erp_values[index],
                     erp_ma_values[index],
-                    erp_pct_values[index],
+                    round(float(erp_pct_values[index]), 1),
                     erp_yields[index],
                     erp_pes[index],
                     erp_closes[index],
