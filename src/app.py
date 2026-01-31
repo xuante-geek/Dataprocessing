@@ -361,6 +361,47 @@ def _rolling_percentiles(values: list[float | None], window: int) -> list[float 
     return out
 
 
+def _rolling_percentiles_with_internal(
+    values: list[float | None],
+    window: int,
+    internal: int,
+) -> list[float | None]:
+    if window <= 0:
+        raise ValueError("滚动窗口必须为正整数")
+    if internal <= 0:
+        raise ValueError("观察周期窗口必须为正整数")
+
+    valid_indices = [index for index, value in enumerate(values) if value is not None]
+    out: list[float | None] = [None] * len(values)
+    if not valid_indices:
+        return out
+
+    values_seq = [float(values[index]) for index in valid_indices]
+    total = len(values_seq)
+    target = min(internal, total)
+    start_seq_index = total - target
+
+    sorted_window: list[float] = []
+    q: deque[float] = deque()
+
+    for seq_index, value in enumerate(values_seq):
+        insort(sorted_window, value)
+        q.append(value)
+        if len(q) > window:
+            leaving = q.popleft()
+            remove_index = bisect_left(sorted_window, leaving)
+            if remove_index >= len(sorted_window) or sorted_window[remove_index] != leaving:
+                raise ValueError("内部错误：滚动窗口移除失败")
+            sorted_window.pop(remove_index)
+
+        if seq_index < start_seq_index:
+            continue
+
+        out[valid_indices[seq_index]] = _rolling_percentile(sorted_window, value)
+
+    return out
+
+
 def _load_ratio_series(source_path: Path) -> tuple[list[str], list[float]]:
     workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
     try:
@@ -470,9 +511,13 @@ def _build_percentile_records(
     *,
     ma_window: int,
     rp_window: int,
+    internal_window: int | None,
 ) -> list[tuple[dt.date, float]]:
     ma_values = _moving_average(values, ma_window)
-    pct_values = _rolling_percentiles(ma_values, rp_window)
+    if internal_window is None:
+        total = sum(1 for value in ma_values if value is not None)
+        internal_window = max(1, total - rp_window + 1)
+    pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
     out: list[tuple[dt.date, float]] = []
     for index, date_text in enumerate(dates):
         pct = pct_values[index]
@@ -490,9 +535,13 @@ def _build_erp_percentile_records(
     *,
     ma_window: int,
     rp_window: int,
+    internal_window: int | None,
 ) -> list[dict[str, object]]:
     ma_values = _moving_average(erp_values, ma_window)
-    pct_values = _rolling_percentiles(ma_values, rp_window)
+    if internal_window is None:
+        total = sum(1 for value in ma_values if value is not None)
+        internal_window = max(1, total - rp_window + 1)
+    pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
     out: list[dict[str, object]] = []
     for index, date_text in enumerate(dates):
         pct = pct_values[index]
@@ -1202,15 +1251,33 @@ def generate_thermometer_percentiles() -> object:
             raise ValueError(f"{name} 超出范围（{min_value}-{max_value}）")
         return raw
 
+    def get_mode(name: str) -> str:
+        raw = payload.get(name, "auto")
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in ("auto", "custom"):
+                return text
+        raise ValueError(f"{name} 必须为 auto 或 custom")
+
     try:
         ma_gdp = get_int("moving_average_gdp", min_value=1, max_value=1000)
         rp_gdp = get_int("rolling_period_gdp", min_value=1, max_value=1000)
+        internal_gdp_mode = get_mode("internal_gdp_mode")
+        internal_gdp = None if internal_gdp_mode == "auto" else get_int("internal_gdp", min_value=1, max_value=1000)
         ma_volume = get_int("moving_average_volume", min_value=1, max_value=4000)
         rp_volume = get_int("rolling_period_volume", min_value=1, max_value=4000)
+        internal_volume_mode = get_mode("internal_volume_mode")
+        internal_volume = None if internal_volume_mode == "auto" else get_int("internal_volume", min_value=1, max_value=4000)
         ma_securities = get_int("moving_average_securities", min_value=1, max_value=4000)
         rp_securities = get_int("rolling_period_securities", min_value=1, max_value=4000)
+        internal_securities_mode = get_mode("internal_securities_mode")
+        internal_securities = (
+            None if internal_securities_mode == "auto" else get_int("internal_securities", min_value=1, max_value=4000)
+        )
         ma_erp = get_int("moving_erp", min_value=1, max_value=4000)
         rp_erp = get_int("rolling_period_erp", min_value=1, max_value=4000)
+        internal_erp_mode = get_mode("internal_erp_mode")
+        internal_erp = None if internal_erp_mode == "auto" else get_int("internal_erp", min_value=1, max_value=4000)
 
         gdp_path = _find_input_xlsx("data_Ratio GDP")
         volume_path = _find_input_xlsx("data_Ratio Volume")
@@ -1228,9 +1295,13 @@ def generate_thermometer_percentiles() -> object:
             metric_header: str,
             ma_window: int,
             rp_window: int,
+            internal_window: int | None,
         ) -> list[list[object]]:
             ma_values = _moving_average(values, ma_window)
-            pct_values = _rolling_percentiles(ma_values, rp_window)
+            if internal_window is None:
+                total = sum(1 for value in ma_values if value is not None)
+                internal_window = max(1, total - rp_window + 1)
+            pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
             out: list[list[object]] = [["日期", metric_header, "平均移动", "分位"]]
             for index, date_text in enumerate(dates):
                 if pct_values[index] is None:
@@ -1244,6 +1315,7 @@ def generate_thermometer_percentiles() -> object:
             metric_header="总市值/GDP",
             ma_window=ma_gdp,
             rp_window=rp_gdp,
+            internal_window=internal_gdp,
         )
         vol_out = build_output(
             vol_dates,
@@ -1251,6 +1323,7 @@ def generate_thermometer_percentiles() -> object:
             metric_header="成交量/总市值",
             ma_window=ma_volume,
             rp_window=rp_volume,
+            internal_window=internal_volume,
         )
         sec_out = build_output(
             sec_dates,
@@ -1258,9 +1331,13 @@ def generate_thermometer_percentiles() -> object:
             metric_header="融资融券/总市值",
             ma_window=ma_securities,
             rp_window=rp_securities,
+            internal_window=internal_securities,
         )
         erp_ma_values = _moving_average(erp_values, ma_erp)
-        erp_pct_values = _rolling_percentiles(erp_ma_values, rp_erp)
+        if internal_erp is None:
+            total = sum(1 for value in erp_ma_values if value is not None)
+            internal_erp = max(1, total - rp_erp + 1)
+        erp_pct_values = _rolling_percentiles_with_internal(erp_ma_values, rp_erp, internal_erp)
         erp_out: list[list[object]] = [
             ["日期", "股权风险溢价", "平均移动", "分位", "十年国债收益率", "PE-TTM-S", "全A点位"]
         ]
@@ -1355,15 +1432,33 @@ def generate_thermometer_merge() -> object:
                 return False
         raise ValueError(f"{name} 必须为布尔值")
 
+    def get_mode(name: str) -> str:
+        raw = payload.get(name, "auto")
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in ("auto", "custom"):
+                return text
+        raise ValueError(f"{name} 必须为 auto 或 custom")
+
     try:
         ma_gdp = get_int("moving_average_gdp", min_value=1, max_value=1000)
         rp_gdp = get_int("rolling_period_gdp", min_value=1, max_value=1000)
+        internal_gdp_mode = get_mode("internal_gdp_mode")
+        internal_gdp = None if internal_gdp_mode == "auto" else get_int("internal_gdp", min_value=1, max_value=1000)
         ma_volume = get_int("moving_average_volume", min_value=1, max_value=4000)
         rp_volume = get_int("rolling_period_volume", min_value=1, max_value=4000)
+        internal_volume_mode = get_mode("internal_volume_mode")
+        internal_volume = None if internal_volume_mode == "auto" else get_int("internal_volume", min_value=1, max_value=4000)
         ma_securities = get_int("moving_average_securities", min_value=1, max_value=4000)
         rp_securities = get_int("rolling_period_securities", min_value=1, max_value=4000)
+        internal_securities_mode = get_mode("internal_securities_mode")
+        internal_securities = (
+            None if internal_securities_mode == "auto" else get_int("internal_securities", min_value=1, max_value=4000)
+        )
         ma_erp = get_int("moving_erp", min_value=1, max_value=4000)
         rp_erp = get_int("rolling_period_erp", min_value=1, max_value=4000)
+        internal_erp_mode = get_mode("internal_erp_mode")
+        internal_erp = None if internal_erp_mode == "auto" else get_int("internal_erp", min_value=1, max_value=4000)
 
         weight_gdp = get_weight("weight_gdp")
         weight_volume = get_weight("weight_volume")
@@ -1388,9 +1483,27 @@ def generate_thermometer_merge() -> object:
         sec_dates, sec_values = _load_ratio_series(lend_path)
         erp_dates, erp_values, erp_yields, _, erp_closes = _load_erp_series()
 
-        gdp_records = _build_percentile_records(gdp_dates, gdp_values, ma_window=ma_gdp, rp_window=rp_gdp)
-        vol_records = _build_percentile_records(vol_dates, vol_values, ma_window=ma_volume, rp_window=rp_volume)
-        sec_records = _build_percentile_records(sec_dates, sec_values, ma_window=ma_securities, rp_window=rp_securities)
+        gdp_records = _build_percentile_records(
+            gdp_dates,
+            gdp_values,
+            ma_window=ma_gdp,
+            rp_window=rp_gdp,
+            internal_window=internal_gdp,
+        )
+        vol_records = _build_percentile_records(
+            vol_dates,
+            vol_values,
+            ma_window=ma_volume,
+            rp_window=rp_volume,
+            internal_window=internal_volume,
+        )
+        sec_records = _build_percentile_records(
+            sec_dates,
+            sec_values,
+            ma_window=ma_securities,
+            rp_window=rp_securities,
+            internal_window=internal_securities,
+        )
         erp_records = _build_erp_percentile_records(
             erp_dates,
             erp_values,
@@ -1398,6 +1511,7 @@ def generate_thermometer_merge() -> object:
             erp_closes,
             ma_window=ma_erp,
             rp_window=rp_erp,
+            internal_window=internal_erp,
         )
 
         if not (gdp_records and vol_records and sec_records and erp_records):

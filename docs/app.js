@@ -9,12 +9,20 @@ const intervalEndInput = document.getElementById("interval-end");
 const thermoStatusText = document.getElementById("thermo-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
+const internalGdpInput = document.getElementById("internal-gdp");
+const internalGdpMode = document.getElementById("internal-gdp-mode");
 const maVolumeInput = document.getElementById("ma-volume");
 const rpVolumeInput = document.getElementById("rp-volume");
+const internalVolumeInput = document.getElementById("internal-volume");
+const internalVolumeMode = document.getElementById("internal-volume-mode");
 const maSecuritiesInput = document.getElementById("ma-securities");
 const rpSecuritiesInput = document.getElementById("rp-securities");
+const internalSecuritiesInput = document.getElementById("internal-securities");
+const internalSecuritiesMode = document.getElementById("internal-securities-mode");
 const maErpInput = document.getElementById("ma-erp");
 const rpErpInput = document.getElementById("rp-erp");
+const internalErpInput = document.getElementById("internal-erp");
+const internalErpMode = document.getElementById("internal-erp-mode");
 const wGdpInput = document.getElementById("w-gdp");
 const wVolumeInput = document.getElementById("w-volume");
 const wSecuritiesInput = document.getElementById("w-securities");
@@ -40,6 +48,16 @@ const panelThermo = document.getElementById("panel-thermo");
 
 let isBusy = false;
 let isServiceAvailable = false;
+
+const syncInternalToggle = (modeEl, inputEl) => {
+  const isAuto = modeEl.value === "auto";
+  inputEl.disabled = isBusy || isAuto;
+  if (isAuto) {
+    inputEl.value = "";
+  } else if (!inputEl.value) {
+    inputEl.value = inputEl.defaultValue || "";
+  }
+};
 
 const setStatus = (message) => {
   statusText.textContent = message;
@@ -71,12 +89,20 @@ const updateControls = () => {
   thermoMergeButton.disabled = isBusy || !isServiceAvailable;
   maGdpInput.disabled = isBusy;
   rpGdpInput.disabled = isBusy;
+  internalGdpMode.disabled = isBusy;
+  syncInternalToggle(internalGdpMode, internalGdpInput);
   maVolumeInput.disabled = isBusy;
   rpVolumeInput.disabled = isBusy;
+  internalVolumeMode.disabled = isBusy;
+  syncInternalToggle(internalVolumeMode, internalVolumeInput);
   maSecuritiesInput.disabled = isBusy;
   rpSecuritiesInput.disabled = isBusy;
+  internalSecuritiesMode.disabled = isBusy;
+  syncInternalToggle(internalSecuritiesMode, internalSecuritiesInput);
   maErpInput.disabled = isBusy;
   rpErpInput.disabled = isBusy;
+  internalErpMode.disabled = isBusy;
+  syncInternalToggle(internalErpMode, internalErpInput);
   wGdpInput.disabled = isBusy;
   wVolumeInput.disabled = isBusy;
   wSecuritiesInput.disabled = isBusy;
@@ -297,18 +323,39 @@ const parseIntInRange = (value, min, max, label) => {
   return n;
 };
 
+const parseInternalValue = (modeEl, inputEl, min, max, label) => {
+  if (modeEl.value === "auto") {
+    return null;
+  }
+  return parseIntInRange(inputEl.value, min, max, label);
+};
+
 const generateThermoPercentiles = async () => {
   let payload;
   try {
     payload = {
       moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
       rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
+      internal_gdp_mode: internalGdpMode.value,
+      internal_gdp: parseInternalValue(internalGdpMode, internalGdpInput, 1, 1000, "总市值/GDP观察周期窗口（周频）"),
       moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
       rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
+      internal_volume_mode: internalVolumeMode.value,
+      internal_volume: parseInternalValue(internalVolumeMode, internalVolumeInput, 1, 4000, "成交量/总市值观察周期窗口"),
       moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
       rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
+      internal_securities_mode: internalSecuritiesMode.value,
+      internal_securities: parseInternalValue(
+        internalSecuritiesMode,
+        internalSecuritiesInput,
+        1,
+        4000,
+        "融资融券/总市值观察周期窗口",
+      ),
       moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
       rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
+      internal_erp_mode: internalErpMode.value,
+      internal_erp: parseInternalValue(internalErpMode, internalErpInput, 1, 4000, "股权风险溢价观察周期窗口"),
     };
   } catch (error) {
     showModal("参数错误", error.message);
@@ -358,12 +405,26 @@ const generateThermoMerge = async () => {
     payload = {
       moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
       rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
+      internal_gdp_mode: internalGdpMode.value,
+      internal_gdp: parseInternalValue(internalGdpMode, internalGdpInput, 1, 1000, "总市值/GDP观察周期窗口（周频）"),
       moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
       rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
+      internal_volume_mode: internalVolumeMode.value,
+      internal_volume: parseInternalValue(internalVolumeMode, internalVolumeInput, 1, 4000, "成交量/总市值观察周期窗口"),
       moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
       rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
+      internal_securities_mode: internalSecuritiesMode.value,
+      internal_securities: parseInternalValue(
+        internalSecuritiesMode,
+        internalSecuritiesInput,
+        1,
+        4000,
+        "融资融券/总市值观察周期窗口",
+      ),
       moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
       rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
+      internal_erp_mode: internalErpMode.value,
+      internal_erp: parseInternalValue(internalErpMode, internalErpInput, 1, 4000, "股权风险溢价观察周期窗口"),
 
       weight_gdp: parseFloatInRange(wGdpInput.value, 0, 100, "权重：市值/GDP（%）"),
       weight_volume: parseFloatInRange(wVolumeInput.value, 0, 100, "权重：成交量/市值（%）"),
@@ -423,6 +484,19 @@ modal.addEventListener("click", (event) => {
 
 isServiceAvailable = false;
 updateControls();
+const bindInternalMode = (modeEl, inputEl) => {
+  modeEl.addEventListener("change", () => {
+    syncInternalToggle(modeEl, inputEl);
+  });
+};
+bindInternalMode(internalGdpMode, internalGdpInput);
+bindInternalMode(internalVolumeMode, internalVolumeInput);
+bindInternalMode(internalSecuritiesMode, internalSecuritiesInput);
+bindInternalMode(internalErpMode, internalErpInput);
+syncInternalToggle(internalGdpMode, internalGdpInput);
+syncInternalToggle(internalVolumeMode, internalVolumeInput);
+syncInternalToggle(internalSecuritiesMode, internalSecuritiesInput);
+syncInternalToggle(internalErpMode, internalErpInput);
 const today = new Date();
 const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
   .toISOString()

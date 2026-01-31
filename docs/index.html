@@ -88,6 +88,16 @@
                 </div>
               </div>
               <div class="control">
+                <label for="internal-gdp">总市值/GDP观察周期窗口（周频）</label>
+                <div class="select-wrap select-duo">
+                  <select id="internal-gdp-mode">
+                    <option value="auto" selected>自动</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <input id="internal-gdp" type="number" min="1" max="1000" step="1" value="500" />
+                </div>
+              </div>
+              <div class="control">
                 <label for="w-gdp">权重：市值/GDP（%）</label>
                 <div class="select-wrap">
                   <input id="w-gdp" type="number" min="0" max="100" step="1" value="20" />
@@ -104,6 +114,16 @@
                 <label for="rp-volume">成交量/总市值分位滚动周期</label>
                 <div class="select-wrap">
                   <input id="rp-volume" type="number" min="1" max="4000" step="1" value="1000" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="internal-volume">成交量/总市值观察周期窗口</label>
+                <div class="select-wrap select-duo">
+                  <select id="internal-volume-mode">
+                    <option value="auto" selected>自动</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <input id="internal-volume" type="number" min="1" max="4000" step="1" value="1000" />
                 </div>
               </div>
               <div class="control">
@@ -126,6 +146,16 @@
                 </div>
               </div>
               <div class="control">
+                <label for="internal-securities">融资融券/总市值观察周期窗口</label>
+                <div class="select-wrap select-duo">
+                  <select id="internal-securities-mode">
+                    <option value="auto" selected>自动</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <input id="internal-securities" type="number" min="1" max="4000" step="1" value="1000" />
+                </div>
+              </div>
+              <div class="control">
                 <label for="w-securities">权重：融资融券/市值（%）</label>
                 <div class="select-wrap">
                   <input id="w-securities" type="number" min="0" max="100" step="1" value="20" />
@@ -142,6 +172,16 @@
                 <label for="rp-erp">股权风险溢价分位滚动周期</label>
                 <div class="select-wrap">
                   <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
+                </div>
+              </div>
+              <div class="control">
+                <label for="internal-erp">股权风险溢价观察周期窗口</label>
+                <div class="select-wrap select-duo">
+                  <select id="internal-erp-mode">
+                    <option value="auto" selected>自动</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <input id="internal-erp" type="number" min="1" max="4000" step="1" value="2000" />
                 </div>
               </div>
               <div class="control">
