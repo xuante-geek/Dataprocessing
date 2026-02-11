@@ -361,32 +361,37 @@ def _rolling_percentiles(values: list[float | None], window: int) -> list[float 
     return out
 
 
-def _rolling_percentiles_with_internal(
+def _rolling_percentiles_with_min_window(
     values: list[float | None],
     window: int,
-    internal: int,
+    min_window: int,
 ) -> list[float | None]:
     if window <= 0:
         raise ValueError("滚动窗口必须为正整数")
-    if internal <= 0:
-        raise ValueError("观察周期窗口必须为正整数")
+    if min_window <= 0:
+        raise ValueError("最小递减滚动周期必须为正整数")
+    if min_window > window:
+        raise ValueError("最小递减滚动周期不能大于分位滚动周期")
 
-    valid_indices = [index for index, value in enumerate(values) if value is not None]
+    first_valid = 0
+    while first_valid < len(values) and values[first_valid] is None:
+        first_valid += 1
+
     out: list[float | None] = [None] * len(values)
-    if not valid_indices:
+    if first_valid >= len(values):
         return out
-
-    values_seq = [float(values[index]) for index in valid_indices]
-    total = len(values_seq)
-    target = min(internal, total)
-    start_seq_index = total - target
 
     sorted_window: list[float] = []
     q: deque[float] = deque()
 
-    for seq_index, value in enumerate(values_seq):
-        insort(sorted_window, value)
-        q.append(value)
+    for index in range(first_valid, len(values)):
+        current = values[index]
+        if current is None:
+            out[index] = None
+            continue
+
+        insort(sorted_window, float(current))
+        q.append(float(current))
         if len(q) > window:
             leaving = q.popleft()
             remove_index = bisect_left(sorted_window, leaving)
@@ -394,12 +399,63 @@ def _rolling_percentiles_with_internal(
                 raise ValueError("内部错误：滚动窗口移除失败")
             sorted_window.pop(remove_index)
 
-        if seq_index < start_seq_index:
+        if len(q) < min_window:
+            out[index] = None
             continue
 
-        out[valid_indices[seq_index]] = _rolling_percentile(sorted_window, value)
+        out[index] = _rolling_percentile(sorted_window, float(current))
 
     return out
+
+
+def _rolling_percentiles_with_min_window_sizes(
+    values: list[float | None],
+    window: int,
+    min_window: int,
+) -> tuple[list[float | None], list[int | None]]:
+    if window <= 0:
+        raise ValueError("滚动窗口必须为正整数")
+    if min_window <= 0:
+        raise ValueError("最小递减滚动周期必须为正整数")
+    if min_window > window:
+        raise ValueError("最小递减滚动周期不能大于分位滚动周期")
+
+    first_valid = 0
+    while first_valid < len(values) and values[first_valid] is None:
+        first_valid += 1
+
+    out: list[float | None] = [None] * len(values)
+    window_sizes: list[int | None] = [None] * len(values)
+    if first_valid >= len(values):
+        return out, window_sizes
+
+    sorted_window: list[float] = []
+    q: deque[float] = deque()
+
+    for index in range(first_valid, len(values)):
+        current = values[index]
+        if current is None:
+            out[index] = None
+            continue
+
+        insort(sorted_window, float(current))
+        q.append(float(current))
+        if len(q) > window:
+            leaving = q.popleft()
+            remove_index = bisect_left(sorted_window, leaving)
+            if remove_index >= len(sorted_window) or sorted_window[remove_index] != leaving:
+                raise ValueError("内部错误：滚动窗口移除失败")
+            sorted_window.pop(remove_index)
+
+        if len(q) < min_window:
+            out[index] = None
+            continue
+
+        out[index] = _rolling_percentile(sorted_window, float(current))
+        window_sizes[index] = len(q)
+
+    return out, window_sizes
+
 
 
 def _load_ratio_series(source_path: Path) -> tuple[list[str], list[float]]:
@@ -511,13 +567,16 @@ def _build_percentile_records(
     *,
     ma_window: int,
     rp_window: int,
-    internal_window: int | None,
+    internal_mode: str,
+    min_window: int | None,
 ) -> list[tuple[dt.date, float]]:
     ma_values = _moving_average(values, ma_window)
-    if internal_window is None:
-        total = sum(1 for value in ma_values if value is not None)
-        internal_window = max(1, total - rp_window + 1)
-    pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
+    if internal_mode == "auto":
+        pct_values = _rolling_percentiles(ma_values, rp_window)
+    else:
+        if min_window is None:
+            raise ValueError("最小递减滚动周期不能为空")
+        pct_values = _rolling_percentiles_with_min_window(ma_values, rp_window, min_window)
     out: list[tuple[dt.date, float]] = []
     for index, date_text in enumerate(dates):
         pct = pct_values[index]
@@ -535,13 +594,16 @@ def _build_erp_percentile_records(
     *,
     ma_window: int,
     rp_window: int,
-    internal_window: int | None,
+    internal_mode: str,
+    min_window: int | None,
 ) -> list[dict[str, object]]:
     ma_values = _moving_average(erp_values, ma_window)
-    if internal_window is None:
-        total = sum(1 for value in ma_values if value is not None)
-        internal_window = max(1, total - rp_window + 1)
-    pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
+    if internal_mode == "auto":
+        pct_values = _rolling_percentiles(ma_values, rp_window)
+    else:
+        if min_window is None:
+            raise ValueError("最小递减滚动周期不能为空")
+        pct_values = _rolling_percentiles_with_min_window(ma_values, rp_window, min_window)
     out: list[dict[str, object]] = []
     for index, date_text in enumerate(dates):
         pct = pct_values[index]
@@ -1259,6 +1321,20 @@ def generate_thermometer_percentiles() -> object:
                 return text
         raise ValueError(f"{name} 必须为 auto 或 custom")
 
+    def get_bool(name: str, default: bool = False) -> bool:
+        raw = payload.get(name)
+        if raw is None:
+            return default
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, str):
+            text = raw.strip().lower()
+            if text in ("1", "true", "yes", "y", "on"):
+                return True
+            if text in ("0", "false", "no", "n", "off"):
+                return False
+        raise ValueError(f"{name} 必须为布尔值")
+
     try:
         ma_gdp = get_int("moving_average_gdp", min_value=1, max_value=1000)
         rp_gdp = get_int("rolling_period_gdp", min_value=1, max_value=1000)
@@ -1278,6 +1354,16 @@ def generate_thermometer_percentiles() -> object:
         rp_erp = get_int("rolling_period_erp", min_value=1, max_value=4000)
         internal_erp_mode = get_mode("internal_erp_mode")
         internal_erp = None if internal_erp_mode == "auto" else get_int("internal_erp", min_value=1, max_value=4000)
+        include_window_size = get_bool("include_window_size", False)
+
+        if internal_gdp_mode == "custom" and internal_gdp is not None and internal_gdp > rp_gdp:
+            raise ValueError("总市值/GDP最小递减滚动周期不能大于分位滚动周期")
+        if internal_volume_mode == "custom" and internal_volume is not None and internal_volume > rp_volume:
+            raise ValueError("成交量/总市值最小递减滚动周期不能大于分位滚动周期")
+        if internal_securities_mode == "custom" and internal_securities is not None and internal_securities > rp_securities:
+            raise ValueError("融资融券/总市值最小递减滚动周期不能大于分位滚动周期")
+        if internal_erp_mode == "custom" and internal_erp is not None and internal_erp > rp_erp:
+            raise ValueError("股权风险溢价最小递减滚动周期不能大于分位滚动周期")
 
         gdp_path = _find_input_xlsx("data_Ratio GDP")
         volume_path = _find_input_xlsx("data_Ratio Volume")
@@ -1295,18 +1381,38 @@ def generate_thermometer_percentiles() -> object:
             metric_header: str,
             ma_window: int,
             rp_window: int,
-            internal_window: int | None,
+            internal_mode: str,
+            min_window: int | None,
         ) -> list[list[object]]:
             ma_values = _moving_average(values, ma_window)
-            if internal_window is None:
-                total = sum(1 for value in ma_values if value is not None)
-                internal_window = max(1, total - rp_window + 1)
-            pct_values = _rolling_percentiles_with_internal(ma_values, rp_window, internal_window)
+            if internal_mode == "auto":
+                if include_window_size:
+                    pct_values, window_sizes = _rolling_percentiles_with_min_window_sizes(
+                        ma_values, rp_window, rp_window
+                    )
+                else:
+                    pct_values = _rolling_percentiles(ma_values, rp_window)
+                    window_sizes = None
+            else:
+                if min_window is None:
+                    raise ValueError("最小递减滚动周期不能为空")
+                if include_window_size:
+                    pct_values, window_sizes = _rolling_percentiles_with_min_window_sizes(
+                        ma_values, rp_window, min_window
+                    )
+                else:
+                    pct_values = _rolling_percentiles_with_min_window(ma_values, rp_window, min_window)
+                    window_sizes = None
             out: list[list[object]] = [["日期", metric_header, "平均移动", "分位"]]
+            if include_window_size:
+                out[0].append("滚动周期长度")
             for index, date_text in enumerate(dates):
                 if pct_values[index] is None:
                     continue
-                out.append([date_text, values[index], ma_values[index], pct_values[index]])
+                row = [date_text, values[index], ma_values[index], pct_values[index]]
+                if include_window_size and window_sizes is not None:
+                    row.append(window_sizes[index])
+                out.append(row)
             return out
 
         gdp_out = build_output(
@@ -1315,7 +1421,8 @@ def generate_thermometer_percentiles() -> object:
             metric_header="总市值/GDP",
             ma_window=ma_gdp,
             rp_window=rp_gdp,
-            internal_window=internal_gdp,
+            internal_mode=internal_gdp_mode,
+            min_window=internal_gdp,
         )
         vol_out = build_output(
             vol_dates,
@@ -1323,7 +1430,8 @@ def generate_thermometer_percentiles() -> object:
             metric_header="成交量/总市值",
             ma_window=ma_volume,
             rp_window=rp_volume,
-            internal_window=internal_volume,
+            internal_mode=internal_volume_mode,
+            min_window=internal_volume,
         )
         sec_out = build_output(
             sec_dates,
@@ -1331,30 +1439,48 @@ def generate_thermometer_percentiles() -> object:
             metric_header="融资融券/总市值",
             ma_window=ma_securities,
             rp_window=rp_securities,
-            internal_window=internal_securities,
+            internal_mode=internal_securities_mode,
+            min_window=internal_securities,
         )
         erp_ma_values = _moving_average(erp_values, ma_erp)
-        if internal_erp is None:
-            total = sum(1 for value in erp_ma_values if value is not None)
-            internal_erp = max(1, total - rp_erp + 1)
-        erp_pct_values = _rolling_percentiles_with_internal(erp_ma_values, rp_erp, internal_erp)
+        if internal_erp_mode == "auto":
+            if include_window_size:
+                erp_pct_values, erp_window_sizes = _rolling_percentiles_with_min_window_sizes(
+                    erp_ma_values, rp_erp, rp_erp
+                )
+            else:
+                erp_pct_values = _rolling_percentiles(erp_ma_values, rp_erp)
+                erp_window_sizes = None
+        else:
+            if internal_erp is None:
+                raise ValueError("股权风险溢价最小递减滚动周期不能为空")
+            if include_window_size:
+                erp_pct_values, erp_window_sizes = _rolling_percentiles_with_min_window_sizes(
+                    erp_ma_values, rp_erp, internal_erp
+                )
+            else:
+                erp_pct_values = _rolling_percentiles_with_min_window(erp_ma_values, rp_erp, internal_erp)
+                erp_window_sizes = None
         erp_out: list[list[object]] = [
             ["日期", "股权风险溢价", "平均移动", "分位", "十年国债收益率", "PE-TTM-S", "全A点位"]
         ]
+        if include_window_size:
+            erp_out[0].insert(4, "滚动周期长度")
         for index, date_text in enumerate(erp_dates):
             if erp_pct_values[index] is None:
                 continue
-            erp_out.append(
-                [
-                    date_text,
-                    erp_values[index],
-                    erp_ma_values[index],
-                    round(float(erp_pct_values[index]), 1),
-                    erp_yields[index],
-                    erp_pes[index],
-                    erp_closes[index],
-                ]
-            )
+            row = [
+                date_text,
+                erp_values[index],
+                erp_ma_values[index],
+                round(float(erp_pct_values[index]), 1),
+                erp_yields[index],
+                erp_pes[index],
+                erp_closes[index],
+            ]
+            if include_window_size and erp_window_sizes is not None:
+                row.insert(4, erp_window_sizes[index])
+            erp_out.append(row)
 
         outputs = {
             "ratio_gdp": "Ratio_GDP_Percentile.csv",
@@ -1488,21 +1614,24 @@ def generate_thermometer_merge() -> object:
             gdp_values,
             ma_window=ma_gdp,
             rp_window=rp_gdp,
-            internal_window=internal_gdp,
+            internal_mode=internal_gdp_mode,
+            min_window=internal_gdp,
         )
         vol_records = _build_percentile_records(
             vol_dates,
             vol_values,
             ma_window=ma_volume,
             rp_window=rp_volume,
-            internal_window=internal_volume,
+            internal_mode=internal_volume_mode,
+            min_window=internal_volume,
         )
         sec_records = _build_percentile_records(
             sec_dates,
             sec_values,
             ma_window=ma_securities,
             rp_window=rp_securities,
-            internal_window=internal_securities,
+            internal_mode=internal_securities_mode,
+            min_window=internal_securities,
         )
         erp_records = _build_erp_percentile_records(
             erp_dates,
@@ -1511,7 +1640,8 @@ def generate_thermometer_merge() -> object:
             erp_closes,
             ma_window=ma_erp,
             rp_window=rp_erp,
-            internal_window=internal_erp,
+            internal_mode=internal_erp_mode,
+            min_window=internal_erp,
         )
 
         if not (gdp_records and vol_records and sec_records and erp_records):

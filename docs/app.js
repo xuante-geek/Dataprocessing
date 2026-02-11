@@ -32,6 +32,7 @@ const colVolume = document.getElementById("col-volume");
 const colSecurities = document.getElementById("col-securities");
 const colErp = document.getElementById("col-erp");
 const colYield = document.getElementById("col-yield");
+const windowSizeToggle = document.getElementById("window-size-toggle");
 
 const statusText = document.getElementById("status");
 const modal = document.getElementById("modal");
@@ -112,6 +113,9 @@ const updateControls = () => {
   colSecurities.disabled = isBusy;
   colErp.disabled = isBusy;
   colYield.disabled = isBusy;
+  if (windowSizeToggle) {
+    windowSizeToggle.disabled = isBusy;
+  }
 };
 
 const checkService = async () => {
@@ -337,11 +341,23 @@ const generateThermoPercentiles = async () => {
       moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
       rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
       internal_gdp_mode: internalGdpMode.value,
-      internal_gdp: parseInternalValue(internalGdpMode, internalGdpInput, 1, 1000, "总市值/GDP观察周期窗口（周频）"),
+      internal_gdp: parseInternalValue(
+        internalGdpMode,
+        internalGdpInput,
+        1,
+        1000,
+        "总市值/GDP最小递减滚动周期（周频）",
+      ),
       moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
       rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
       internal_volume_mode: internalVolumeMode.value,
-      internal_volume: parseInternalValue(internalVolumeMode, internalVolumeInput, 1, 4000, "成交量/总市值观察周期窗口"),
+      internal_volume: parseInternalValue(
+        internalVolumeMode,
+        internalVolumeInput,
+        1,
+        4000,
+        "成交量/总市值最小递减滚动周期",
+      ),
       moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
       rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
       internal_securities_mode: internalSecuritiesMode.value,
@@ -350,12 +366,19 @@ const generateThermoPercentiles = async () => {
         internalSecuritiesInput,
         1,
         4000,
-        "融资融券/总市值观察周期窗口",
+        "融资融券/总市值最小递减滚动周期",
       ),
       moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
       rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
       internal_erp_mode: internalErpMode.value,
-      internal_erp: parseInternalValue(internalErpMode, internalErpInput, 1, 4000, "股权风险溢价观察周期窗口"),
+      internal_erp: parseInternalValue(
+        internalErpMode,
+        internalErpInput,
+        1,
+        4000,
+        "股权风险溢价最小递减滚动周期",
+      ),
+      include_window_size: Boolean(windowSizeToggle && windowSizeToggle.checked),
     };
   } catch (error) {
     showModal("参数错误", error.message);
@@ -406,11 +429,23 @@ const generateThermoMerge = async () => {
       moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
       rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
       internal_gdp_mode: internalGdpMode.value,
-      internal_gdp: parseInternalValue(internalGdpMode, internalGdpInput, 1, 1000, "总市值/GDP观察周期窗口（周频）"),
+      internal_gdp: parseInternalValue(
+        internalGdpMode,
+        internalGdpInput,
+        1,
+        1000,
+        "总市值/GDP最小递减滚动周期（周频）",
+      ),
       moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
       rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
       internal_volume_mode: internalVolumeMode.value,
-      internal_volume: parseInternalValue(internalVolumeMode, internalVolumeInput, 1, 4000, "成交量/总市值观察周期窗口"),
+      internal_volume: parseInternalValue(
+        internalVolumeMode,
+        internalVolumeInput,
+        1,
+        4000,
+        "成交量/总市值最小递减滚动周期",
+      ),
       moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
       rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
       internal_securities_mode: internalSecuritiesMode.value,
@@ -419,12 +454,18 @@ const generateThermoMerge = async () => {
         internalSecuritiesInput,
         1,
         4000,
-        "融资融券/总市值观察周期窗口",
+        "融资融券/总市值最小递减滚动周期",
       ),
       moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
       rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
       internal_erp_mode: internalErpMode.value,
-      internal_erp: parseInternalValue(internalErpMode, internalErpInput, 1, 4000, "股权风险溢价观察周期窗口"),
+      internal_erp: parseInternalValue(
+        internalErpMode,
+        internalErpInput,
+        1,
+        4000,
+        "股权风险溢价最小递减滚动周期",
+      ),
 
       weight_gdp: parseFloatInRange(wGdpInput.value, 0, 100, "权重：市值/GDP（%）"),
       weight_volume: parseFloatInRange(wVolumeInput.value, 0, 100, "权重：成交量/市值（%）"),

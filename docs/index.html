@@ -72,6 +72,9 @@
               <span id="thermo-status" class="status" aria-live="polite"></span>
             </div>
           </div>
+          <div class="diagnostic">
+            <label class="check"><input id="window-size-toggle" type="checkbox">滚动诊断：输出滚动周期长度</label>
+          </div>
 
           <div class="thermo-stack">
             <div class="thermo-factor-grid">
@@ -88,7 +91,7 @@
                 </div>
               </div>
               <div class="control">
-                <label for="internal-gdp">总市值/GDP观察周期窗口（周频）</label>
+                <label for="internal-gdp">总市值/GDP最小递减滚动周期（周频）</label>
                 <div class="select-wrap select-duo">
                   <select id="internal-gdp-mode">
                     <option value="auto" selected>自动</option>
@@ -117,7 +120,7 @@
                 </div>
               </div>
               <div class="control">
-                <label for="internal-volume">成交量/总市值观察周期窗口</label>
+                <label for="internal-volume">成交量/总市值最小递减滚动周期</label>
                 <div class="select-wrap select-duo">
                   <select id="internal-volume-mode">
                     <option value="auto" selected>自动</option>
@@ -146,7 +149,7 @@
                 </div>
               </div>
               <div class="control">
-                <label for="internal-securities">融资融券/总市值观察周期窗口</label>
+                <label for="internal-securities">融资融券/总市值最小递减滚动周期</label>
                 <div class="select-wrap select-duo">
                   <select id="internal-securities-mode">
                     <option value="auto" selected>自动</option>
@@ -175,7 +178,7 @@
                 </div>
               </div>
               <div class="control">
-                <label for="internal-erp">股权风险溢价观察周期窗口</label>
+                <label for="internal-erp">股权风险溢价最小递减滚动周期</label>
                 <div class="select-wrap select-duo">
                   <select id="internal-erp-mode">
                     <option value="auto" selected>自动</option>

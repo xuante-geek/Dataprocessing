@@ -28,7 +28,7 @@ body {
 }
 
 .shell {
-  width: min(1180px, 100%);
+  width: min(1280px, 100%);
   position: relative;
   z-index: 1;
   display: grid;
@@ -316,6 +316,12 @@ button:disabled {
 
 .thermo-actions {
   margin-bottom: 10px;
+}
+
+.diagnostic {
+  display: flex;
+  align-items: center;
+  margin-top: -4px;
 }
 
 .thermo-stack {
