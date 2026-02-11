@@ -62,6 +62,15 @@
             <p class="hint-body">滚动周期用于计算滚动时间窗口内的动态布林带（±1σ、±2σ）；固定区间用于计算“起始日期→终止日期”的水平布林线。</p>
             <p class="hint-body">输出：<span class="path">ERP.csv</span>、<span class="path">ERP_Rolling Calculation.csv</span>、<span class="path">ERP_Interval.csv</span>。</p>
           </div>
+
+          <div class="control">
+            <label>可选导出列</label>
+            <div class="checks">
+              <label class="check"><input id="erp-col-yield" type="checkbox" checked>十年国债收益率</label>
+              <label class="check"><input id="erp-col-pe" type="checkbox" checked>PE-TTM-S</label>
+              <label class="check"><input id="erp-col-erp-pct" type="checkbox" checked>股权风险溢价分位</label>
+            </div>
+          </div>
         </div>
 
         <div id="panel-thermo" class="panel-body hidden">

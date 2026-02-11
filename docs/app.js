@@ -32,6 +32,9 @@ const colVolume = document.getElementById("col-volume");
 const colSecurities = document.getElementById("col-securities");
 const colErp = document.getElementById("col-erp");
 const colYield = document.getElementById("col-yield");
+const erpColYield = document.getElementById("erp-col-yield");
+const erpColPe = document.getElementById("erp-col-pe");
+const erpColErpPct = document.getElementById("erp-col-erp-pct");
 const windowSizeToggle = document.getElementById("window-size-toggle");
 
 const statusText = document.getElementById("status");
@@ -116,6 +119,15 @@ const updateControls = () => {
   if (windowSizeToggle) {
     windowSizeToggle.disabled = isBusy;
   }
+  if (erpColYield) {
+    erpColYield.disabled = isBusy;
+  }
+  if (erpColPe) {
+    erpColPe.disabled = isBusy;
+  }
+  if (erpColErpPct) {
+    erpColErpPct.disabled = isBusy;
+  }
 };
 
 const checkService = async () => {
@@ -172,7 +184,12 @@ const generateErp = async () => {
   setStatus("正在导出完整周期 ERP...");
 
   try {
-    const data = await postJson("/api/erp");
+    const payload = {
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    };
+    const data = await postJson("/api/erp", payload);
     const outputs = data.outputs || {};
     const lines = [
       "已生成：",
@@ -219,7 +236,13 @@ const generateRolling = async () => {
   setStatus(`正在导出滚动周期 ERP（n=${n}）...`);
 
   try {
-    const data = await postJson("/api/erprolling", { n });
+    const payload = {
+      n,
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    };
+    const data = await postJson("/api/erprolling", payload);
     const lines = [
       `n = ${data.n}`,
       "已生成：",
@@ -275,7 +298,14 @@ const generateInterval = async () => {
   setStatus(`正在导出指定周期 ERP（${startDate} → ${endDate}）...`);
 
   try {
-    const data = await postJson("/api/erpinterval", { start_date: startDate, end_date: endDate });
+    const payload = {
+      start_date: startDate,
+      end_date: endDate,
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    };
+    const data = await postJson("/api/erpinterval", payload);
     if (data.used_end_date && intervalEndInput.value !== data.used_end_date) {
       intervalEndInput.value = data.used_end_date;
     }

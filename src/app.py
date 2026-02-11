@@ -797,6 +797,19 @@ def _write_csv(rows: list[list[object]], path: Path) -> None:
             writer.writerow([_cell_to_text(value) for value in row])
 
 
+def _filter_columns(rows: list[list[object]], drop_names: set[str]) -> list[list[object]]:
+    if not rows or not drop_names:
+        return rows
+    header = rows[0]
+    keep_indices = [i for i, name in enumerate(header) if str(name) not in drop_names]
+    if len(keep_indices) == len(header):
+        return rows
+    filtered: list[list[object]] = []
+    for row in rows:
+        filtered.append([row[i] for i in keep_indices if i < len(row)])
+    return filtered
+
+
 def _write_xlsx(rows: list[list[object]], path: Path, sheet_title: str) -> None:
     workbook_out = openpyxl.Workbook()
     sheet_out = workbook_out.active
@@ -1080,6 +1093,10 @@ def convert_file() -> object:
 
 @app.post("/api/erp")
 def generate_erp() -> object:
+    payload = request.get_json(silent=True) or {}
+    include_yield = bool(payload.get("include_yield", True))
+    include_pe = bool(payload.get("include_pe", True))
+    include_erp_percentile = bool(payload.get("include_erp_percentile", True))
     try:
         pe_path = _find_input_xlsx("data_PE")
         bond_path = _find_input_xlsx("data_bond")
@@ -1098,6 +1115,19 @@ def generate_erp() -> object:
             [date.isoformat(), yield_raw, pe, close] for date, yield_raw, pe, close in merged_rows
         ]
         erp_rows = _compute_erp_rows(merged_rows, bond_rows)
+
+        drop_names: set[str] = set()
+        if not include_yield:
+            drop_names.add("十年国债收益率")
+        if not include_pe:
+            drop_names.add("PE-TTM-S")
+        if not include_erp_percentile:
+            drop_names.add("股权风险溢价分位")
+
+        pe_clean_rows = _filter_columns(pe_clean_rows, drop_names)
+        bond_clean_rows = _filter_columns(bond_clean_rows, drop_names)
+        merged_clean_rows = _filter_columns(merged_clean_rows, drop_names)
+        erp_rows = _filter_columns(erp_rows, drop_names)
 
         output = {
             "data_PE_clean": "data_PE_clean.csv",
@@ -1157,6 +1187,9 @@ def generate_erp_10year() -> object:
 def generate_erp_rolling() -> object:
     payload = request.get_json(silent=True) or {}
     n = payload.get("n")
+    include_yield = bool(payload.get("include_yield", True))
+    include_pe = bool(payload.get("include_pe", True))
+    include_erp_percentile = bool(payload.get("include_erp_percentile", True))
 
     try:
         if isinstance(n, str):
@@ -1177,7 +1210,16 @@ def generate_erp_rolling() -> object:
         merged_rows = _merge_by_bond_dates(bond_rows, pe_rows)
         erp_rows = _compute_erp_rows(merged_rows, bond_rows)
 
-        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n, include_percentile=True)
+        bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n, include_percentile=include_erp_percentile)
+
+        drop_names: set[str] = set()
+        if not include_yield:
+            drop_names.add("十年国债收益率")
+        if not include_pe:
+            drop_names.add("PE-TTM-S")
+        if not include_erp_percentile:
+            drop_names.add("股权风险溢价分位")
+        bands_rows = _filter_columns(bands_rows, drop_names)
 
         csv_name = "ERP_Rolling Calculation.csv"
         _write_csv(bands_rows, OUTPUT_DIR / csv_name)
@@ -1196,6 +1238,9 @@ def generate_erp_interval() -> object:
     payload = request.get_json(silent=True) or {}
     start_date_raw = payload.get("start_date")
     end_date_raw = payload.get("end_date")
+    include_yield = bool(payload.get("include_yield", True))
+    include_pe = bool(payload.get("include_pe", True))
+    include_erp_percentile = bool(payload.get("include_erp_percentile", True))
 
     try:
         if not isinstance(start_date_raw, str) or not start_date_raw.strip():
@@ -1226,6 +1271,15 @@ def generate_erp_interval() -> object:
         earliest, latest, actual_start, actual_end, output_rows, median, stddevp = _compute_erp_interval_bands(
             erp_rows, start_date=start_date, end_date=end_date
         )
+
+        drop_names: set[str] = set()
+        if not include_yield:
+            drop_names.add("十年国债收益率")
+        if not include_pe:
+            drop_names.add("PE-TTM-S")
+        if not include_erp_percentile:
+            drop_names.add("股权风险溢价分位")
+        output_rows = _filter_columns(output_rows, drop_names)
 
         csv_name = "ERP_Interval.csv"
         _write_csv(output_rows, OUTPUT_DIR / csv_name)
