@@ -31,7 +31,7 @@
               <div class="control">
                 <label for="rolling-n">滚动周期 n（交易日）</label>
                 <div class="select-wrap">
-                  <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2000" />
+                  <input id="rolling-n" type="number" inputmode="numeric" min="1" max="4000" step="1" value="2400" />
                 </div>
               </div>
             </div>
@@ -41,7 +41,7 @@
               <div class="control">
                 <label for="interval-start">固定区间起始日期（YYYY-MM-DD）</label>
                 <div class="select-wrap">
-                  <input id="interval-start" type="date" />
+                  <input id="interval-start" type="date" value="2014-01-02" />
                 </div>
               </div>
               <div class="control">
@@ -66,9 +66,9 @@
           <div class="control">
             <label>可选导出列</label>
             <div class="checks">
-              <label class="check"><input id="erp-col-yield" type="checkbox" checked>十年国债收益率</label>
-              <label class="check"><input id="erp-col-pe" type="checkbox" checked>PE-TTM-S</label>
-              <label class="check"><input id="erp-col-erp-pct" type="checkbox" checked>股权风险溢价分位</label>
+              <label class="check"><input id="erp-col-yield" type="checkbox">十年国债收益率</label>
+              <label class="check"><input id="erp-col-pe" type="checkbox">PE-TTM-S</label>
+              <label class="check"><input id="erp-col-erp-pct" type="checkbox">股权风险溢价分位</label>
             </div>
           </div>
         </div>
@@ -112,14 +112,14 @@
               <div class="control">
                 <label for="w-gdp">权重：市值/GDP（%）</label>
                 <div class="select-wrap">
-                  <input id="w-gdp" type="number" min="0" max="100" step="1" value="20" />
+                  <input id="w-gdp" type="number" min="0" max="100" step="1" value="34" />
                 </div>
               </div>
 
               <div class="control">
                 <label for="ma-volume">成交量平均移动</label>
                 <div class="select-wrap">
-                  <input id="ma-volume" type="number" min="1" max="4000" step="1" value="1" />
+                  <input id="ma-volume" type="number" min="1" max="4000" step="1" value="20" />
                 </div>
               </div>
               <div class="control">
@@ -141,7 +141,7 @@
               <div class="control">
                 <label for="w-volume">权重：成交量/市值（%）</label>
                 <div class="select-wrap">
-                  <input id="w-volume" type="number" min="0" max="100" step="1" value="20" />
+                  <input id="w-volume" type="number" min="0" max="100" step="1" value="33" />
                 </div>
               </div>
 
@@ -170,7 +170,7 @@
               <div class="control">
                 <label for="w-securities">权重：融资融券/市值（%）</label>
                 <div class="select-wrap">
-                  <input id="w-securities" type="number" min="0" max="100" step="1" value="20" />
+                  <input id="w-securities" type="number" min="0" max="100" step="1" value="33" />
                 </div>
               </div>
 
@@ -183,15 +183,15 @@
               <div class="control">
                 <label for="rp-erp">股权风险溢价分位滚动周期</label>
                 <div class="select-wrap">
-                  <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2000" />
+                  <input id="rp-erp" type="number" min="1" max="4000" step="1" value="2400" />
                 </div>
               </div>
               <div class="control">
                 <label for="internal-erp">股权风险溢价最小递减滚动周期</label>
                 <div class="select-wrap select-duo">
                   <select id="internal-erp-mode">
-                    <option value="auto" selected>自动</option>
-                    <option value="custom">自定义</option>
+                    <option value="auto">自动</option>
+                    <option value="custom" selected>自定义</option>
                   </select>
                   <input id="internal-erp" type="number" min="1" max="4000" step="1" value="2000" />
                 </div>
@@ -199,7 +199,7 @@
               <div class="control">
                 <label for="w-erp">权重：股权风险溢价分位（%）</label>
                 <div class="select-wrap">
-                  <input id="w-erp" type="number" min="0" max="100" step="1" value="40" />
+                  <input id="w-erp" type="number" min="0" max="100" step="1" value="0" />
                 </div>
               </div>
             </div>
@@ -207,11 +207,11 @@
             <div class="control">
               <label>可选导出列</label>
               <div class="checks">
-                <label class="check"><input id="col-gdp" type="checkbox" checked>市值/GDP分位</label>
-                <label class="check"><input id="col-volume" type="checkbox" checked>成交量/市值分位</label>
-                <label class="check"><input id="col-securities" type="checkbox" checked>融资融券/市值分位</label>
-                <label class="check"><input id="col-erp" type="checkbox" checked>股权风险溢价</label>
-                <label class="check"><input id="col-yield" type="checkbox" checked>十年国债收益率</label>
+              <label class="check"><input id="col-gdp" type="checkbox">市值/GDP分位</label>
+              <label class="check"><input id="col-volume" type="checkbox">成交量/市值分位</label>
+              <label class="check"><input id="col-securities" type="checkbox">融资融券/市值分位</label>
+              <label class="check"><input id="col-erp" type="checkbox">股权风险溢价</label>
+              <label class="check"><input id="col-yield" type="checkbox">十年国债收益率</label>
               </div>
             </div>
           </div>
