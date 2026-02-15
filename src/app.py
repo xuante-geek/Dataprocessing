@@ -586,6 +586,35 @@ def _build_percentile_records(
     return out
 
 
+def _keep_weekly_latest_records(records: list[tuple[dt.date, float]]) -> list[tuple[dt.date, float]]:
+    if not records:
+        return records
+    latest_by_week: dict[tuple[int, int], tuple[dt.date, float]] = {}
+    for date_value, metric_value in records:
+        iso_year, iso_week, _ = date_value.isocalendar()
+        latest_by_week[(iso_year, iso_week)] = (date_value, metric_value)
+    return sorted(latest_by_week.values(), key=lambda item: item[0])
+
+
+def _keep_weekly_latest_rows(rows: list[list[object]]) -> list[list[object]]:
+    if len(rows) <= 2:
+        return rows
+    header = rows[0]
+    latest_by_week: dict[tuple[int, int], list[object]] = {}
+    for row in rows[1:]:
+        if not row:
+            continue
+        try:
+            date_value = dt.date.fromisoformat(str(row[0]))
+        except ValueError:
+            continue
+        iso_year, iso_week, _ = date_value.isocalendar()
+        latest_by_week[(iso_year, iso_week)] = row
+    out = [header]
+    out.extend(sorted(latest_by_week.values(), key=lambda row: dt.date.fromisoformat(str(row[0]))))
+    return out
+
+
 def _build_erp_percentile_records(
     dates: list[str],
     erp_values: list[float],
@@ -1478,6 +1507,7 @@ def generate_thermometer_percentiles() -> object:
             internal_mode=internal_gdp_mode,
             min_window=internal_gdp,
         )
+        gdp_out = _keep_weekly_latest_rows(gdp_out)
         vol_out = build_output(
             vol_dates,
             vol_values,
@@ -1671,6 +1701,7 @@ def generate_thermometer_merge() -> object:
             internal_mode=internal_gdp_mode,
             min_window=internal_gdp,
         )
+        gdp_records = _keep_weekly_latest_records(gdp_records)
         vol_records = _build_percentile_records(
             vol_dates,
             vol_values,
