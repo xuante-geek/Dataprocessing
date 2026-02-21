@@ -1,0 +1,72 @@
+{
+  "download_dir": "input",
+  "user_data_dir": "data/user_data",
+  "headless": false,
+  "tasks": [
+    {
+      "id": "gdp",
+      "name": "GDP",
+      "url": "https://www.touzid.com/macro/gdp.html#/",
+      "range": null,
+      "freq": null,
+      "output_name": "data_Ratio GDP",
+      "validation": {
+        "min_span_years": 20,
+        "freq": "week",
+        "freq_ratio": 0.8
+      }
+    },
+    {
+      "id": "market_amount",
+      "name": "成交量",
+      "url": "https://www.touzid.com/model/market-amount.html#/",
+      "range": "all",
+      "freq": null,
+      "output_name": "data_Ratio Volume",
+      "validation": {
+        "min_span_years": 20,
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
+    },
+    {
+      "id": "margin_trading",
+      "name": "融资融券",
+      "url": "https://www.touzid.com/model/margin-trading.html#/",
+      "range": "20y",
+      "freq": null,
+      "output_name": "data_Ratio Securities Lend",
+      "validation": {
+        "min_start_date": "2010-04-01",
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
+    },
+    {
+      "id": "all_a_index",
+      "name": "全A指数",
+      "url": "https://www.touzid.com/indice/fundamental.html#/sh000985",
+      "range": "all",
+      "freq": "day",
+      "output_name": "data_PE",
+      "validation": {
+        "min_span_years": 20,
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
+    },
+    {
+      "id": "national_debt",
+      "name": "国债",
+      "url": "https://www.touzid.com/macro/national-debt.html#/",
+      "range": "20y",
+      "freq": null,
+      "output_name": "data_bond",
+      "validation": {
+        "min_span_years": 19.5,
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
+    }
+  ]
+}

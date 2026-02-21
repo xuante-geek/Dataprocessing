@@ -4,10 +4,15 @@ from bisect import bisect_left, bisect_right, insort
 from collections import deque
 import csv
 import datetime as dt
+import json
+import logging
 import math
 import os
 from pathlib import Path
-from typing import Iterable
+import re
+import threading
+import time
+from typing import Iterable, Optional
 
 from flask import Flask, jsonify, request
 
@@ -20,6 +25,12 @@ except ImportError as exc:  # pragma: no cover - runtime dependency check
         "缺少依赖：openpyxl。请先安装 requirements.txt 后再运行。"
     ) from exc
 
+try:
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+except ImportError:  # pragma: no cover - optional dependency for download console
+    sync_playwright = None  # type: ignore[assignment]
+    PlaywrightTimeoutError = Exception  # type: ignore[assignment]
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "docs" / "data"
@@ -28,6 +39,29 @@ DOCS_DIR = BASE_DIR / "docs"
 app = Flask(__name__, static_folder=str(DOCS_DIR), static_url_path="")
 
 OUTPUT_DECIMAL_PLACES = 6
+
+DOWNLOAD_CONFIG_PATH = BASE_DIR / "config" / "download_config.json"
+DOWNLOAD_LOCK_PATH = BASE_DIR / "data" / "download.lock"
+DOWNLOAD_LOCK_STALE_SECONDS = 60 * 30
+DOWNLOAD_DEFAULT_WAIT_MS = 5000
+DOWNLOAD_LOGIN_WAIT_SECONDS = 300
+
+
+class DownloadLoginAbort(Exception):
+    pass
+
+
+DOWNLOAD_STATUS = {
+    "running": False,
+    "run_id": 0,
+    "trigger": None,
+    "started_at": None,
+    "ended_at": None,
+    "success": None,
+    "message": "",
+    "tasks": {},
+}
+DOWNLOAD_STATUS_LOCK = threading.Lock()
 
 
 def _cell_to_text(value: object) -> str:
@@ -49,6 +83,565 @@ def _round_for_output(value: object) -> object:
             return value
         return round(value, OUTPUT_DECIMAL_PLACES)
     return value
+
+def _download_load_config() -> dict:
+    if not DOWNLOAD_CONFIG_PATH.exists():
+        raise FileNotFoundError("缺少下载配置：config/download_config.json")
+    with DOWNLOAD_CONFIG_PATH.open("r", encoding="utf-8") as file_handle:
+        return json.load(file_handle)
+
+
+def _download_save_config(cfg: dict) -> None:
+    DOWNLOAD_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with DOWNLOAD_CONFIG_PATH.open("w", encoding="utf-8") as file_handle:
+        json.dump(cfg, file_handle, ensure_ascii=False, indent=2)
+
+
+def _download_resolve_path(path_text: str) -> Path:
+    path = Path(path_text)
+    if path.is_absolute():
+        return path
+    return BASE_DIR / path
+
+
+def _download_ensure_dirs(cfg: dict) -> tuple[Path, Path]:
+    download_dir = _download_resolve_path(cfg["download_dir"])
+    user_data_dir = _download_resolve_path(cfg["user_data_dir"])
+    download_dir.mkdir(parents=True, exist_ok=True)
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+    DOWNLOAD_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return download_dir, user_data_dir
+
+
+def _download_acquire_lock() -> bool:
+    if DOWNLOAD_LOCK_PATH.exists():
+        try:
+            content = DOWNLOAD_LOCK_PATH.read_text().strip().split("\n")
+            pid = int(content[0]) if content else None
+            ts = float(content[1]) if len(content) > 1 else 0
+            if pid:
+                try:
+                    os.kill(pid, 0)
+                    return False
+                except OSError:
+                    pass
+            if time.time() - ts > DOWNLOAD_LOCK_STALE_SECONDS:
+                DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
+            else:
+                return False
+        except Exception:
+            try:
+                DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
+            except Exception:
+                return False
+    try:
+        fd = os.open(DOWNLOAD_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, f"{os.getpid()}\n{time.time()}".encode("utf-8"))
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+
+
+def _download_release_lock() -> None:
+    try:
+        DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _download_set_status(update: dict) -> None:
+    with DOWNLOAD_STATUS_LOCK:
+        DOWNLOAD_STATUS.update(update)
+
+
+def _download_update_task_status(task_id: str, update: dict) -> None:
+    with DOWNLOAD_STATUS_LOCK:
+        if task_id not in DOWNLOAD_STATUS["tasks"]:
+            DOWNLOAD_STATUS["tasks"][task_id] = {}
+        DOWNLOAD_STATUS["tasks"][task_id].update(update)
+
+
+def _download_reset_task_status(tasks: list[dict]) -> None:
+    with DOWNLOAD_STATUS_LOCK:
+        DOWNLOAD_STATUS["tasks"] = {
+            task["id"]: {
+                "status": "idle",
+                "message": "",
+                "file": "",
+                "validation": None,
+                "started_at": None,
+                "ended_at": None,
+            }
+            for task in tasks
+        }
+
+
+def _download_now_ts() -> str:
+    return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _download_click_button_by_text(page, text: str) -> None:
+    try:
+        loc = page.get_by_role("button", name=text)
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+    page.get_by_text(text, exact=True).first.click(timeout=5000)
+
+
+def _download_click_download_excel(page) -> None:
+    try:
+        loc = page.get_by_role("button", name=re.compile("EXCEL"))
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+    page.get_by_text(re.compile("EXCEL"), exact=False).first.click(timeout=5000)
+
+
+def _download_login_required(page) -> bool:
+    keywords = ["微信扫码", "微信扫一扫", "扫码登录", "二维码有效期", "QQ登录", "用户密码登录"]
+    if page.is_closed():
+        return False
+    for keyword in keywords:
+        try:
+            if page.get_by_text(keyword, exact=False).is_visible():
+                return True
+        except Exception:
+            pass
+    try:
+        if page.get_by_role("button", name="登录").is_visible():
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _download_wait_for_login(page) -> None:
+    start = time.time()
+    while True:
+        if page.is_closed():
+            raise DownloadLoginAbort("登录窗口被关闭，已中止本次任务")
+        if not _download_login_required(page):
+            return
+        if time.time() - start > DOWNLOAD_LOGIN_WAIT_SECONDS:
+            raise DownloadLoginAbort("登录超时，请重新扫码登录")
+        time.sleep(2)
+
+
+def _download_ensure_logged_in(context, url: str) -> None:
+    page = context.new_page()
+    page.bring_to_front()
+    page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=DOWNLOAD_DEFAULT_WAIT_MS)
+    except PlaywrightTimeoutError:
+        pass
+    if _download_login_required(page):
+        _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
+        _download_wait_for_login(page)
+    page.close()
+
+
+def _download_wait_chart_update(page) -> None:
+    try:
+        page.wait_for_load_state("networkidle", timeout=DOWNLOAD_DEFAULT_WAIT_MS)
+    except PlaywrightTimeoutError:
+        pass
+    page.wait_for_timeout(DOWNLOAD_DEFAULT_WAIT_MS)
+
+
+def _download_open_freq_dropdown(page) -> None:
+    candidates = ["周", "月", "日"]
+    try:
+        loc = page.locator("input.el-input__inner[placeholder='粒度']")
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+
+    try:
+        loc = page.locator("div.wa-chart-toolbox").locator(
+            "input.el-input__inner[placeholder='粒度']"
+        )
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+
+    for text in candidates:
+        try:
+            loc = page.get_by_role("button", name=text)
+            if loc.count() > 0:
+                loc.first.click(timeout=5000)
+                return
+        except Exception:
+            pass
+    for text in candidates:
+        try:
+            loc = page.get_by_text(text, exact=True)
+            if loc.count() > 0:
+                loc.first.click(timeout=5000)
+                return
+        except Exception:
+            pass
+
+    for text in candidates:
+        try:
+            loc = page.locator("[aria-haspopup], [class*='select'], [class*='dropdown'], [class*='picker']").filter(
+                has_text=re.compile(f"^{text}$")
+            )
+            if loc.count() > 0:
+                loc.first.click(timeout=5000)
+                return
+        except Exception:
+            pass
+
+    try:
+        export_img = page.get_by_text("导出图片", exact=False)
+        if export_img.count() > 0:
+            loc = export_img.first.locator(
+                "xpath=preceding::*[(self::div or self::span or self::button) "
+                "and (contains(normalize-space(.), '周') or contains(normalize-space(.), '月') or contains(normalize-space(.), '日'))][1]"
+            )
+            if loc.count() > 0:
+                loc.first.click(timeout=5000)
+                return
+    except Exception:
+        pass
+
+    try:
+        export_excel = page.get_by_text(re.compile("EXCEL"), exact=False)
+        if export_excel.count() > 0:
+            loc = export_excel.first.locator(
+                "xpath=preceding::*[(self::div or self::span or self::button) "
+                "and (contains(normalize-space(.), '周') or contains(normalize-space(.), '月') or contains(normalize-space(.), '日'))][1]"
+            )
+            if loc.count() > 0:
+                loc.first.click(timeout=5000)
+                return
+    except Exception:
+        pass
+
+    try:
+        css = "body > div.wa-page > div.wa-container.wa-content > div:nth-child(2) > div > div.el-row > div > div:nth-child(1) > div.wa-chart-toolbox.text-right.mr20 > form > div > div > div.el-badge.item > div > div > input"
+        loc = page.locator(css)
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+
+    raise RuntimeError("未找到频率下拉菜单入口，请确认页面上“周/月/日”控件可见")
+
+
+def _download_select_dropdown_option(page, option_text: str) -> None:
+    try:
+        loc = page.locator("li.el-select-dropdown__item").filter(
+            has_text=re.compile(f"^{option_text}$")
+        )
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+
+    try:
+        loc = page.get_by_role("option", name=option_text)
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+
+    try:
+        loc = page.locator("li").filter(has_text=re.compile(f"^{option_text}$"))
+        if loc.count() > 0:
+            loc.first.click(timeout=5000)
+            return
+    except Exception:
+        pass
+    page.get_by_text(option_text, exact=True).last.click(timeout=5000)
+
+
+def _download_parse_date_str(text: str) -> Optional[dt.date]:
+    text = text.strip()
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y%m%d"):
+        try:
+            return dt.datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _download_read_date_column(path: Path) -> list[dt.date]:
+    workbook = openpyxl.load_workbook(filename=path, read_only=True, data_only=True)
+    sheet = workbook.active
+    dates: list[dt.date] = []
+    for index, row in enumerate(sheet.iter_rows(min_row=1, max_col=1, values_only=True), start=1):
+        value = row[0]
+        if index == 1 and isinstance(value, str):
+            continue
+        if value is None:
+            continue
+        if isinstance(value, dt.datetime):
+            dates.append(value.date())
+        elif hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
+            dates.append(dt.date(value.year, value.month, value.day))
+        elif isinstance(value, str):
+            parsed = _download_parse_date_str(value)
+            if parsed:
+                dates.append(parsed)
+    workbook.close()
+    return sorted(set(dates))
+
+
+def _download_validate_dates(dates: list[dt.date], rule: dict) -> dict:
+    result = {"ok": True, "errors": [], "warnings": [], "stats": {}}
+    if not dates:
+        return {"ok": False, "errors": ["日期列为空"], "warnings": [], "stats": {}}
+
+    min_date, max_date = dates[0], dates[-1]
+    span_days = (max_date - min_date).days
+    result["stats"].update({"min": str(min_date), "max": str(max_date), "span_days": span_days})
+
+    min_span_years = rule.get("min_span_years")
+    if min_span_years is not None:
+        min_days = min_span_years * 365.25
+        if span_days < min_days:
+            result["ok"] = False
+            result["errors"].append(f"时间跨度不足{min_span_years}年")
+
+    min_start_date = rule.get("min_start_date")
+    if min_start_date:
+        try:
+            target = dt.datetime.strptime(min_start_date, "%Y-%m-%d").date()
+            if min_date > target:
+                result["ok"] = False
+                result["errors"].append(f"起始日期晚于{min_start_date}")
+        except ValueError:
+            result["warnings"].append("起始日期规则格式无效")
+
+    expected_freq = rule.get("freq")
+    ratio_threshold = rule.get("freq_ratio", 0.8)
+    if expected_freq:
+        diffs = []
+        for i in range(1, len(dates)):
+            diff = (dates[i] - dates[i - 1]).days
+            if diff > 0:
+                diffs.append(diff)
+        if not diffs:
+            return {"ok": False, "errors": ["无法计算频率"], "warnings": [], "stats": result["stats"]}
+
+        if expected_freq == "day":
+            match = sum(1 for diff in diffs if 1 <= diff <= 4)
+            ratio = match / len(diffs)
+            result["stats"].update({"daily_ratio": round(ratio, 4)})
+            if ratio < ratio_threshold:
+                result["ok"] = False
+                result["errors"].append("日频校验未通过（1~4天占比过低）")
+        elif expected_freq == "week":
+            match = sum(1 for diff in diffs if 5 <= diff <= 9)
+            ratio = match / len(diffs)
+            result["stats"].update({"weekly_ratio": round(ratio, 4)})
+            if ratio < ratio_threshold:
+                result["ok"] = False
+                result["errors"].append("周频校验未通过（5~9天占比过低）")
+
+    return result
+
+
+def _download_perform_task(task: dict, url: str, context, download_dir: Path) -> dict:
+    task_id = task["id"]
+    page = context.new_page()
+    page.bring_to_front()
+    page.goto(url, wait_until="domcontentloaded")
+    try:
+        page.wait_for_load_state("networkidle", timeout=DOWNLOAD_DEFAULT_WAIT_MS)
+    except PlaywrightTimeoutError:
+        pass
+    if _download_login_required(page):
+        _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
+        _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
+        _download_wait_for_login(page)
+
+    if task_id == "gdp":
+        pass
+    elif task_id == "market_amount":
+        _download_click_button_by_text(page, "所有")
+        _download_wait_chart_update(page)
+    elif task_id == "margin_trading":
+        _download_click_button_by_text(page, "20年")
+        _download_wait_chart_update(page)
+    elif task_id == "all_a_index":
+        _download_click_button_by_text(page, "所有")
+        _download_wait_chart_update(page)
+        _download_open_freq_dropdown(page)
+        _download_select_dropdown_option(page, "日")
+        _download_wait_chart_update(page)
+    elif task_id == "national_debt":
+        _download_click_button_by_text(page, "20年")
+        _download_wait_chart_update(page)
+    else:
+        raise RuntimeError(f"未知任务: {task_id}")
+
+    try:
+        with page.expect_download(timeout=30000) as dl_info:
+            _download_click_download_excel(page)
+    except PlaywrightTimeoutError:
+        if _download_login_required(page):
+            raise RuntimeError("需要登录：请扫码登录后重试")
+        raise RuntimeError("下载超时，请确认页面已刷新并重试")
+    download = dl_info.value
+    suggested = download.suggested_filename or f"{task_id}.xlsx"
+    ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{task_id}_{ts}_{suggested}"
+    dest = download_dir / filename
+    download.save_as(dest)
+
+    dates = _download_read_date_column(dest)
+    validation = _download_validate_dates(dates, task.get("validation", {}))
+
+    final_path = dest
+    output_name = task.get("output_name")
+    if validation.get("ok") and output_name:
+        suffix = dest.suffix or ".xlsx"
+        final_path = dest.parent / f"{output_name}{suffix}"
+        try:
+            final_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        dest.replace(final_path)
+
+    page.close()
+    return {"file": str(final_path), "validation": validation}
+
+
+class _DownloadRunner:
+    def __init__(self) -> None:
+        self.thread: Optional[threading.Thread] = None
+
+    def start(self, task_ids: list[str], urls: dict[str, str], trigger: str) -> bool:
+        with DOWNLOAD_STATUS_LOCK:
+            if DOWNLOAD_STATUS["running"]:
+                return False
+            DOWNLOAD_STATUS["running"] = True
+            DOWNLOAD_STATUS["run_id"] += 1
+            DOWNLOAD_STATUS["trigger"] = trigger
+            DOWNLOAD_STATUS["started_at"] = _download_now_ts()
+            DOWNLOAD_STATUS["ended_at"] = None
+            DOWNLOAD_STATUS["success"] = None
+            DOWNLOAD_STATUS["message"] = ""
+        self.thread = threading.Thread(
+            target=self._run, args=(task_ids, urls, trigger, DOWNLOAD_STATUS["run_id"]), daemon=True
+        )
+        self.thread.start()
+        return True
+
+    def _run(self, task_ids: list[str], urls: dict[str, str], trigger: str, run_id: int) -> None:
+        cfg = _download_load_config()
+        download_dir, user_data_dir = _download_ensure_dirs(cfg)
+        tasks = {task["id"]: task for task in cfg["tasks"]}
+        _download_reset_task_status(cfg["tasks"])
+
+        if sync_playwright is None:
+            _download_set_status({
+                "running": False,
+                "ended_at": _download_now_ts(),
+                "success": False,
+                "message": "缺少依赖：playwright。请先执行 pip install -r requirements.txt",
+            })
+            return
+
+        if not _download_acquire_lock():
+            _download_set_status({
+                "running": False,
+                "ended_at": _download_now_ts(),
+                "success": False,
+                "message": "已有任务在运行或残留锁文件，请稍后再试或清理 data/download.lock",
+            })
+            return
+
+        overall_success = True
+        try:
+            with sync_playwright() as p:
+                context = p.chromium.launch_persistent_context(
+                    user_data_dir=str(user_data_dir),
+                    headless=cfg.get("headless", False),
+                    accept_downloads=True,
+                    channel="chrome",
+                )
+                first_url = cfg["tasks"][0]["url"] if cfg.get("tasks") else None
+                if first_url:
+                    _download_ensure_logged_in(context, first_url)
+                    _download_set_status({"message": ""})
+                abort_all = False
+                for task_id in task_ids:
+                    task = tasks.get(task_id)
+                    if not task:
+                        continue
+                    task_url = urls.get(task_id) or task["url"]
+                    _download_update_task_status(task_id, {"status": "running", "started_at": _download_now_ts()})
+                    try:
+                        result = _download_perform_task(task, task_url, context, download_dir)
+                        validation = result["validation"]
+                        if not validation.get("ok", True):
+                            overall_success = False
+                            err_msg = "; ".join(validation.get("errors", [])) or "校验失败"
+                            _download_update_task_status(task_id, {
+                                "status": "error",
+                                "ended_at": _download_now_ts(),
+                                "message": f"校验失败：{err_msg}",
+                                "file": result["file"],
+                                "validation": validation,
+                            })
+                        else:
+                            _download_update_task_status(task_id, {
+                                "status": "success",
+                                "ended_at": _download_now_ts(),
+                                "file": result["file"],
+                                "validation": validation,
+                            })
+                    except DownloadLoginAbort as exc:
+                        overall_success = False
+                        _download_update_task_status(task_id, {
+                            "status": "error",
+                            "ended_at": _download_now_ts(),
+                            "message": str(exc),
+                        })
+                        _download_set_status({"message": str(exc)})
+                        abort_all = True
+                    except Exception as exc:
+                        overall_success = False
+                        _download_update_task_status(task_id, {
+                            "status": "error",
+                            "ended_at": _download_now_ts(),
+                            "message": str(exc),
+                        })
+                    if abort_all:
+                        break
+                context.close()
+        except Exception as exc:
+            overall_success = False
+            _download_set_status({"message": f"运行失败: {exc}"})
+        finally:
+            _download_release_lock()
+
+        _download_set_status({
+            "running": False,
+            "ended_at": _download_now_ts(),
+            "success": overall_success,
+            "message": "完成" if overall_success else "部分任务失败",
+        })
+
+
+download_runner = _DownloadRunner()
 
 
 def _is_garbled_text(text: str) -> bool:
@@ -1088,6 +1681,48 @@ def list_files() -> object:
         if not p.name.startswith("~$")
     )
     return jsonify({"files": files})
+
+
+@app.get("/api/download/config")
+def download_config() -> object:
+    try:
+        cfg = _download_load_config()
+        return jsonify({"tasks": cfg.get("tasks", [])})
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"读取失败：{exc}"}), 500
+
+
+@app.post("/api/download/run")
+def download_run() -> object:
+    data = request.get_json(force=True)
+    task_ids = data.get("task_ids", [])
+    urls = data.get("urls", {})
+    trigger = data.get("trigger", "manual")
+
+    try:
+        cfg = _download_load_config()
+        for task in cfg.get("tasks", []):
+            if task["id"] in urls and urls[task["id"]]:
+                task["url"] = urls[task["id"]]
+        _download_save_config(cfg)
+
+        started = download_runner.start(task_ids, urls, trigger)
+        if not started:
+            return jsonify({"ok": False, "message": "已有任务在运行"}), 409
+        return jsonify({"ok": True})
+    except FileNotFoundError as exc:
+        return jsonify({"ok": False, "message": str(exc)}), 404
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"ok": False, "message": f"启动失败：{exc}"}), 500
+
+
+@app.get("/api/download/status")
+def download_status() -> object:
+    with DOWNLOAD_STATUS_LOCK:
+        status_copy = json.loads(json.dumps(DOWNLOAD_STATUS))
+    return jsonify(status_copy)
 
 
 @app.post("/api/convert")

@@ -10,17 +10,45 @@
     <main class="shell">
       <header class="hero">
         <p class="eyebrow">DataProcessing</p>
-        <h1 id="page-title">股权风险溢价（ERP）处理器</h1>
+        <h1 id="page-title">DataDownload 控制台</h1>
         <p id="hero-status" class="subhead"></p>
       </header>
 
       <section class="panel">
         <div class="tabs" role="tablist" aria-label="数据处理面板">
-          <button id="tab-erp" class="tab active" type="button" role="tab" aria-selected="true">ERP</button>
+          <button id="tab-download" class="tab active" type="button" role="tab" aria-selected="true">DataDownload</button>
+          <button id="tab-erp" class="tab" type="button" role="tab" aria-selected="false">ERP</button>
           <button id="tab-thermo" class="tab" type="button" role="tab" aria-selected="false">市场温度计</button>
         </div>
 
-        <div id="panel-erp" class="panel-body">
+        <div id="panel-download" class="panel-body">
+          <div class="download-header">
+            <div class="download-actions">
+              <button id="download-run-all" type="button" class="action-btn">手动下载（全部）</button>
+              <button id="download-run-selected" type="button" class="action-btn ghost">手动下载（选中）</button>
+            </div>
+            <div class="download-status">
+              <span id="download-global-status" class="status-chip">待机</span>
+              <span class="download-note">需要扫码登录时会弹出浏览器窗口。</span>
+            </div>
+          </div>
+
+          <div id="download-task-table" class="download-table">
+            <div class="download-row header">
+              <div class="cell checkbox"></div>
+              <div class="cell name">名称</div>
+              <div class="cell url">URL</div>
+              <div class="cell status">状态</div>
+            </div>
+          </div>
+
+          <div class="download-summary">
+            <p class="download-summary-title">运行摘要</p>
+            <p id="download-run-summary" class="download-summary-body">暂无运行记录。</p>
+          </div>
+        </div>
+
+        <div id="panel-erp" class="panel-body hidden">
           <div class="erp-grid">
             <div class="erp-col">
               <button id="erp" type="button" class="action-btn">导出完整周期 ERP</button>

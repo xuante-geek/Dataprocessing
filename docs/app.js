@@ -6,6 +6,11 @@ const thermoMergeButton = document.getElementById("thermo-merge");
 const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
+const downloadRunAllButton = document.getElementById("download-run-all");
+const downloadRunSelectedButton = document.getElementById("download-run-selected");
+const downloadTaskTable = document.getElementById("download-task-table");
+const downloadGlobalStatus = document.getElementById("download-global-status");
+const downloadRunSummary = document.getElementById("download-run-summary");
 const thermoStatusText = document.getElementById("thermo-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
@@ -45,13 +50,21 @@ const modalClose = document.getElementById("modal-close");
 const pageTitle = document.getElementById("page-title");
 const heroStatusText = document.getElementById("hero-status");
 
+const tabDownload = document.getElementById("tab-download");
 const tabErp = document.getElementById("tab-erp");
 const tabThermo = document.getElementById("tab-thermo");
+const panelDownload = document.getElementById("panel-download");
 const panelErp = document.getElementById("panel-erp");
 const panelThermo = document.getElementById("panel-thermo");
 
 let isBusy = false;
 let isServiceAvailable = false;
+let downloadTasks = [];
+let downloadRunning = false;
+let downloadLastRunId = null;
+let downloadLastPrompt = null;
+let downloadPollTimer = null;
+let activePanel = "download";
 
 const syncInternalToggle = (modeEl, inputEl) => {
   const isAuto = modeEl.value === "auto";
@@ -61,6 +74,19 @@ const syncInternalToggle = (modeEl, inputEl) => {
   } else if (!inputEl.value) {
     inputEl.value = inputEl.defaultValue || "";
   }
+};
+
+const updateDownloadControls = () => {
+  const disabled = downloadRunning || !isServiceAvailable;
+  if (downloadRunAllButton) {
+    downloadRunAllButton.disabled = disabled;
+  }
+  if (downloadRunSelectedButton) {
+    downloadRunSelectedButton.disabled = disabled;
+  }
+  document.querySelectorAll(".download-row input, .download-row textarea").forEach((input) => {
+    input.disabled = disabled;
+  });
 };
 
 const setStatus = (message) => {
@@ -128,13 +154,14 @@ const updateControls = () => {
   if (erpColErpPct) {
     erpColErpPct.disabled = isBusy;
   }
+  updateDownloadControls();
 };
 
 const checkService = async () => {
   if (window.location.protocol === "file:") {
     isServiceAvailable = false;
     updateControls();
-    setHeroStatus("本地服务未连接（请先运行 python src/app.py）。");
+    updateHeroStatusForPanel();
     setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5000");
     showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5000");
     return;
@@ -151,11 +178,14 @@ const checkService = async () => {
       throw new Error("本地服务不可用。");
     }
     isServiceAvailable = true;
-    setHeroStatus("本地服务已连接，可以开始生成。");
+    updateHeroStatusForPanel();
     thermoStatusText.textContent = "";
+    if (!downloadPollTimer) {
+      initDownloadPanel();
+    }
   } catch (error) {
     isServiceAvailable = false;
-    setHeroStatus("本地服务未连接（请确认已运行 python src/app.py）。");
+    updateHeroStatusForPanel();
     setStatus("本地服务未连接（请确认已运行 python src/app.py）。");
     thermoStatusText.textContent = "";
     showModal("连接失败", "无法连接本地服务，请先运行：python src/app.py");
@@ -176,6 +206,233 @@ const postJson = async (url, payload) => {
     throw new Error(data.error || "请求失败。");
   }
   return data;
+};
+
+const updateHeroStatusForPanel = () => {
+  if (!isServiceAvailable) {
+    setHeroStatus("本地服务未连接（请确认已运行 python src/app.py）。");
+    return;
+  }
+  if (activePanel === "download") {
+    setHeroStatus("本地服务已连接，可以开始下载。");
+  } else {
+    setHeroStatus("本地服务已连接，可以开始生成。");
+  }
+};
+
+const renderDownloadTasks = () => {
+  if (!downloadTaskTable) return;
+  const rows = downloadTasks.map((task) => {
+    const url = task.url ? String(task.url) : "";
+    return `
+      <div class="download-row" data-id="${task.id}">
+        <div class="cell checkbox"><input type="checkbox" class="download-task-check" /></div>
+        <div class="cell name">${task.name}</div>
+        <div class="cell url"><input type="text" value="${url}" /></div>
+        <div class="cell status"><span class="status-pill">待机</span></div>
+      </div>
+    `;
+  });
+  downloadTaskTable.innerHTML = `
+    <div class="download-row header">
+      <div class="cell checkbox"></div>
+      <div class="cell name">名称</div>
+      <div class="cell url">URL</div>
+      <div class="cell status">状态</div>
+    </div>
+    ${rows.join("")}
+  `;
+  updateDownloadControls();
+};
+
+const loadDownloadConfig = async () => {
+  try {
+    const res = await fetch("/api/download/config");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "读取下载配置失败。");
+    }
+    downloadTasks = data.tasks || [];
+    renderDownloadTasks();
+  } catch (error) {
+    showModal("下载配置失败", error.message);
+  }
+};
+
+const collectDownloadUrls = () => {
+  const urls = {};
+  document.querySelectorAll(".download-row[data-id]").forEach((row) => {
+    const id = row.dataset.id;
+    const input = row.querySelector(".cell.url input");
+    if (input && input.value.trim()) {
+      urls[id] = input.value.trim();
+    }
+  });
+  return urls;
+};
+
+const selectedDownloadTaskIds = () => {
+  const ids = [];
+  document.querySelectorAll(".download-row[data-id]").forEach((row) => {
+    const checked = row.querySelector(".download-task-check")?.checked;
+    if (checked) {
+      ids.push(row.dataset.id);
+    }
+  });
+  return ids;
+};
+
+const runDownloadTasks = async (ids) => {
+  if (downloadRunning) {
+    showModal("提示", "已有下载任务在运行，请稍后再试。");
+    return;
+  }
+  if (!ids.length) {
+    showModal("提示", "请先选择要下载的任务。");
+    return;
+  }
+  try {
+    const payload = {
+      task_ids: ids,
+      urls: collectDownloadUrls(),
+      trigger: "manual",
+    };
+    const res = await fetch("/api/download/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || "启动失败");
+    }
+    downloadRunning = true;
+    updateDownloadControls();
+  } catch (error) {
+    showModal("启动失败", error.message);
+  }
+};
+
+const updateDownloadGlobalStatus = (status) => {
+  if (!downloadGlobalStatus) return;
+  let label = "待机";
+  let klass = "";
+  if (status.running) {
+    label = "运行中";
+    klass = "running";
+  } else if (status.success === true) {
+    label = "完成";
+    klass = "success";
+  } else if (status.success === false) {
+    label = "失败";
+    klass = "error";
+  }
+  downloadGlobalStatus.textContent = label;
+  downloadGlobalStatus.className = `status-chip ${klass}`.trim();
+};
+
+const updateDownloadTaskRow = (taskId, info) => {
+  const row = document.querySelector(`.download-row[data-id='${taskId}']`);
+  if (!row) return;
+  const pill = row.querySelector(".status-pill");
+  if (!pill) return;
+
+  let label = "待机";
+  let klass = "";
+  if (info.status === "running") {
+    label = "进行中";
+    klass = "running";
+  } else if (info.status === "waiting_login") {
+    label = "待登录";
+    klass = "warning";
+  } else if (info.status === "success") {
+    label = "成功";
+    klass = "success";
+    if (info.validation && info.validation.warnings && info.validation.warnings.length) {
+      label = "成功(有警告)";
+      klass = "warning";
+    }
+  } else if (info.status === "error") {
+    label = "失败";
+    klass = "error";
+  }
+  pill.textContent = label;
+  pill.className = `status-pill ${klass}`.trim();
+};
+
+const buildDownloadSummary = (status) => {
+  if (!status.started_at) {
+    return "暂无运行记录。";
+  }
+  const lines = [`运行时间: ${status.started_at} → ${status.ended_at || "进行中"}`];
+  lines.push(`触发方式: ${status.trigger || "manual"}`);
+  lines.push(`结果: ${status.success ? "成功" : "失败/部分失败"}`);
+  if (status.message) {
+    lines.push(`提示: ${status.message}`);
+  }
+  return lines.join("<br />");
+};
+
+const buildDownloadModalBody = (status) => {
+  const rows = [];
+  if (status.message) {
+    rows.push(`<div>${status.message}</div>`);
+  }
+  for (const [id, info] of Object.entries(status.tasks || {})) {
+    const task = downloadTasks.find((t) => t.id === id);
+    const name = task ? task.name : id;
+    let line = `${name}: ${info.status || "idle"}`;
+    if (info.status === "error" && info.message) {
+      line += ` (${info.message})`;
+    }
+    if (info.validation && info.validation.errors && info.validation.errors.length) {
+      line += `，校验错误: ${info.validation.errors.join("；")}`;
+    }
+    if (info.validation && info.validation.warnings && info.validation.warnings.length) {
+      line += `，校验警告: ${info.validation.warnings.join("；")}`;
+    }
+    rows.push(`<div>${line}</div>`);
+  }
+  return rows.join("");
+};
+
+const pollDownloadStatus = async () => {
+  if (!isServiceAvailable) {
+    return;
+  }
+  const res = await fetch("/api/download/status");
+  const status = await res.json();
+
+  downloadRunning = !!status.running;
+  updateDownloadControls();
+  updateDownloadGlobalStatus(status);
+  if (downloadRunSummary) {
+    downloadRunSummary.innerHTML = buildDownloadSummary(status);
+  }
+
+  for (const [id, info] of Object.entries(status.tasks || {})) {
+    updateDownloadTaskRow(id, info);
+  }
+
+  if (status.running && status.message && status.message.includes("扫码") && status.message !== downloadLastPrompt) {
+    downloadLastPrompt = status.message;
+    showModal("需要登录", status.message);
+  }
+
+  if (status.run_id && status.run_id !== downloadLastRunId && status.ended_at) {
+    downloadLastRunId = status.run_id;
+    const title = status.success ? "下载完成" : "下载出现失败";
+    showModal(title, buildDownloadModalBody(status));
+  }
+};
+
+const initDownloadPanel = () => {
+  loadDownloadConfig().then(() => {
+    pollDownloadStatus();
+    if (!downloadPollTimer) {
+      downloadPollTimer = setInterval(pollDownloadStatus, 5000);
+    }
+  });
 };
 
 const generateErp = async () => {
@@ -335,14 +592,25 @@ const generateInterval = async () => {
 };
 
 const setActivePanel = (name) => {
+  activePanel = name;
+  const isDownload = name === "download";
+  const isErp = name === "erp";
   const isThermo = name === "thermo";
-  tabErp.classList.toggle("active", !isThermo);
+  tabDownload.classList.toggle("active", isDownload);
+  tabErp.classList.toggle("active", isErp);
   tabThermo.classList.toggle("active", isThermo);
-  tabErp.setAttribute("aria-selected", String(!isThermo));
+  tabDownload.setAttribute("aria-selected", String(isDownload));
+  tabErp.setAttribute("aria-selected", String(isErp));
   tabThermo.setAttribute("aria-selected", String(isThermo));
-  panelErp.classList.toggle("hidden", isThermo);
+  panelDownload.classList.toggle("hidden", !isDownload);
+  panelErp.classList.toggle("hidden", !isErp);
   panelThermo.classList.toggle("hidden", !isThermo);
-  pageTitle.textContent = isThermo ? "市场温度计" : "股权风险溢价（ERP）处理器";
+  pageTitle.textContent = isDownload
+    ? "DataDownload 控制台"
+    : isThermo
+      ? "市场温度计"
+      : "股权风险溢价（ERP）处理器";
+  updateHeroStatusForPanel();
 };
 
 const parseIntInRange = (value, min, max, label) => {
@@ -546,6 +814,17 @@ rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
 thermoPercentileButton.addEventListener("click", generateThermoPercentiles);
 thermoMergeButton.addEventListener("click", generateThermoMerge);
+if (downloadRunAllButton) {
+  downloadRunAllButton.addEventListener("click", () => {
+    const ids = downloadTasks.map((task) => task.id);
+    runDownloadTasks(ids);
+  });
+}
+if (downloadRunSelectedButton) {
+  downloadRunSelectedButton.addEventListener("click", () => {
+    runDownloadTasks(selectedDownloadTaskIds());
+  });
+}
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) {
@@ -575,6 +854,9 @@ const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
 intervalEndInput.value = localDate;
 checkService();
 
+if (tabDownload) {
+  tabDownload.addEventListener("click", () => setActivePanel("download"));
+}
 tabErp.addEventListener("click", () => setActivePanel("erp"));
 tabThermo.addEventListener("click", () => setActivePanel("thermo"));
-setActivePanel("erp");
+setActivePanel("download");
