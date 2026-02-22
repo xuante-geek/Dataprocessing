@@ -9,16 +9,24 @@
 - 按第一列日期从远到近排序（旧→新）
 - 导出 `CSV`，并额外生成冻结首行/首列的处理后 `Excel`
 
-## 运行
+## 运行（V3 Feature1 已合并 DataDownload）
 
-1. 安装依赖：`pip install -r requirements.txt`
-2. 启动：`python src/app.py`
-3. 打开：`http://127.0.0.1:5000`
+1. 安装依赖：
+   - `python3 -m pip install -r requirements.txt`
+2. 安装浏览器内核（仅首次需要）：
+   - `python3 -m playwright install chromium`
+3. 启动服务：
+   - `python3 src/app.py`
+4. 打开：
+   - `http://127.0.0.1:5000`
+
+注意：请确保“安装依赖”和“启动服务”使用同一个 `python3` 解释器，否则会出现 `缺少依赖：playwright` 的报错。
 
 ## 目录约定
 
 - 输入：`input/`
 - 输出：`docs/data/`
+- 下载缓存：`data/user_data/`（用于扫码登录的浏览器持久化）
 
 ## Feature 2：ERP
 
@@ -81,3 +89,25 @@
 温度计算：`市场温度 = (W_GDP*T1 + W_Volume*T2 + W_Securities*T3 + W_ERP*(100-T4)) / 100`（ERP 分位为反向指标）。
 
 `Market_Thermometer.csv` 默认对分位、市场温度、全A点位等列做 1 位小数输出，便于展示。
+
+## V3 Feature1：DataDownload 控制台
+
+新增第一个 Tab：**DataDownload 控制台**，用于自动下载 Excel 到 `input/`，减少人工拷贝步骤。
+
+主要特性：
+- 任务清单来自 `config/download_config.json`
+- 下载结果会覆盖为标准命名（如 `data_PE.xlsx`、`data_bond.xlsx`、`data_Ratio GDP.xlsx`）
+- 需要扫码登录时会弹出浏览器窗口，完成扫码后继续执行
+
+常见问题：
+- 若提示 `缺少依赖：playwright`，请确保使用同一个 `python3` 执行：
+  - `python3 -m pip install -r requirements.txt`
+  - `python3 -m playwright install chromium`
+  - `python3 src/app.py`
+
+## V3 Feature2：统一 UI 风格（DataDownload 风格）
+
+界面整体视觉统一为 DataDownload 控制台风格：
+- 浅蓝背景、白色卡片与更轻的阴影
+- 主要按键为蓝色实心，次要按键为白底描边
+- 表格、状态胶囊、输入框样式统一为清爽扁平化风格
