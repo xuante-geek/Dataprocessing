@@ -2328,7 +2328,7 @@ def generate_thermometer_merge() -> object:
         sec_dates, sec_values = _load_ratio_series(lend_path)
         erp_dates, erp_values, erp_yields, _, erp_closes = _load_erp_series()
 
-        gdp_records = _build_percentile_records(
+        gdp_records_full = _build_percentile_records(
             gdp_dates,
             gdp_values,
             ma_window=ma_gdp,
@@ -2336,7 +2336,6 @@ def generate_thermometer_merge() -> object:
             internal_mode=internal_gdp_mode,
             min_window=internal_gdp,
         )
-        gdp_records = _keep_weekly_latest_records(gdp_records)
         vol_records = _build_percentile_records(
             vol_dates,
             vol_values,
@@ -2364,7 +2363,7 @@ def generate_thermometer_merge() -> object:
             min_window=internal_erp,
         )
 
-        if not (gdp_records and vol_records and sec_records and erp_records):
+        if not (gdp_records_full and vol_records and sec_records and erp_records):
             raise ValueError("数据不足：请检查移动平均与滚动周期参数是否过大")
 
         vol_start = vol_records[0][0]
@@ -2372,17 +2371,26 @@ def generate_thermometer_merge() -> object:
         erp_start = erp_records[0]["date"]  # type: ignore[assignment]
         assert isinstance(erp_start, dt.date)
 
+        vol_end = vol_records[-1][0]
+        sec_end = sec_records[-1][0]
+        erp_end = erp_records[-1]["date"]  # type: ignore[assignment]
+        assert isinstance(erp_end, dt.date)
+        gdp_end_full = gdp_records_full[-1][0]
+        date_end = min(gdp_end_full, vol_end, sec_end, erp_end)
+
+        gdp_records_filtered = [record for record in gdp_records_full if record[0] <= date_end]
+        if not gdp_records_filtered:
+            raise ValueError("合并失败：GDP 数据在有效区间内为空")
+
+        gdp_records = _keep_weekly_latest_records(gdp_records_filtered)
+        if not gdp_records:
+            raise ValueError("合并失败：GDP 周频数据为空")
+
         date_begin = max(vol_start, sec_start, erp_start)
         gdp_dates_only = [d for d, _ in gdp_records]
         gdp_start_index = _nearest_index(gdp_dates_only, date_begin)
         start_date_used = gdp_dates_only[gdp_start_index]
 
-        vol_end = vol_records[-1][0]
-        sec_end = sec_records[-1][0]
-        erp_end = erp_records[-1]["date"]  # type: ignore[assignment]
-        assert isinstance(erp_end, dt.date)
-        gdp_end = gdp_dates_only[-1]
-        date_end = min(gdp_end, vol_end, sec_end, erp_end)
         gdp_end_index = bisect_right(gdp_dates_only, date_end) - 1
         if gdp_end_index < gdp_start_index:
             raise ValueError("合并失败：有效时间区间为空")
