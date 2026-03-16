@@ -1,3 +1,5 @@
 flask
 openpyxl
 playwright
+cos-python-sdk-v5
+python-dotenv

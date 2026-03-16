@@ -31,6 +31,16 @@ except ImportError:  # pragma: no cover - optional dependency for download conso
     sync_playwright = None  # type: ignore[assignment]
     PlaywrightTimeoutError = Exception  # type: ignore[assignment]
 
+try:
+    from qcloud_cos import CosConfig, CosS3Client
+except ImportError:  # pragma: no cover - optional dependency for COS publish
+    CosConfig = None  # type: ignore[assignment]
+    CosS3Client = None  # type: ignore[assignment]
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional dependency for .env loading
+    load_dotenv = None  # type: ignore[assignment]
 BASE_DIR = Path(__file__).resolve().parents[1]
 INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "docs" / "data"
@@ -45,6 +55,10 @@ DOWNLOAD_LOCK_PATH = BASE_DIR / "data" / "download.lock"
 DOWNLOAD_LOCK_STALE_SECONDS = 60 * 30
 DOWNLOAD_DEFAULT_WAIT_MS = 5000
 DOWNLOAD_LOGIN_WAIT_SECONDS = 300
+
+COS_DEFAULT_BUCKET = "anexus-data-1399092305"
+COS_DEFAULT_REGION = "ap-guangzhou"
+COS_DEFAULT_BASE_PATH = "data"
 
 
 class DownloadLoginAbort(Exception):
@@ -83,6 +97,55 @@ def _round_for_output(value: object) -> object:
             return value
         return round(value, OUTPUT_DECIMAL_PLACES)
     return value
+
+
+def _read_required_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise ValueError(f"缺少环境变量：{name}")
+    return value
+
+
+def _load_cos_settings() -> dict[str, str]:
+    if load_dotenv is not None:
+        load_dotenv()
+    secret_id = _read_required_env("COS_SECRET_ID")
+    secret_key = _read_required_env("COS_SECRET_KEY")
+    bucket = os.environ.get("COS_BUCKET", COS_DEFAULT_BUCKET).strip() or COS_DEFAULT_BUCKET
+    region = os.environ.get("COS_REGION", COS_DEFAULT_REGION).strip() or COS_DEFAULT_REGION
+    base_path = os.environ.get("COS_BASE_PATH", COS_DEFAULT_BASE_PATH).strip().strip("/")
+    return {
+        "secret_id": secret_id,
+        "secret_key": secret_key,
+        "bucket": bucket,
+        "region": region,
+        "base_path": base_path,
+    }
+
+
+def _publish_csv_to_cos(local_path: Path, remote_name: str) -> str:
+    if CosConfig is None or CosS3Client is None:
+        raise ValueError("缺少依赖：cos-python-sdk-v5。请先安装 requirements.txt 后再运行。")
+    if not local_path.exists():
+        raise FileNotFoundError(f"本地文件不存在：{local_path.name}")
+
+    settings = _load_cos_settings()
+    cos_config = CosConfig(
+        Region=settings["region"],
+        SecretId=settings["secret_id"],
+        SecretKey=settings["secret_key"],
+        Scheme="https",
+    )
+    client = CosS3Client(cos_config)
+    key = f"{settings['base_path']}/{remote_name}" if settings["base_path"] else remote_name
+    with local_path.open("rb") as file_handle:
+        client.put_object(
+            Bucket=settings["bucket"],
+            Body=file_handle,
+            Key=key,
+            ContentType="text/csv; charset=utf-8",
+        )
+    return f"https://{settings['bucket']}.cos.{settings['region']}.myqcloud.com/{key}"
 
 def _download_load_config() -> dict:
     if not DOWNLOAD_CONFIG_PATH.exists():
@@ -1946,7 +2009,9 @@ def generate_erp_interval() -> object:
         output_rows = _filter_columns(output_rows, drop_names)
 
         csv_name = "ERP_Interval.csv"
-        _write_csv(output_rows, OUTPUT_DIR / csv_name)
+        csv_path = OUTPUT_DIR / csv_name
+        _write_csv(output_rows, csv_path)
+        remote_url = _publish_csv_to_cos(csv_path, csv_name)
 
         adjusted = actual_start != start_date
         adjusted_end = actual_end != end_date
@@ -1963,6 +2028,7 @@ def generate_erp_interval() -> object:
                 "adjusted_end_to_trading_day": adjusted_end,
                 "median": median,
                 "stddevp": stddevp,
+                "remote_url": remote_url,
             }
         )
     except FileNotFoundError as exc:
@@ -2468,7 +2534,9 @@ def generate_thermometer_merge() -> object:
             rows.append(output_row)
 
         output_name = "Market_Thermometer.csv"
-        _write_csv(rows, OUTPUT_DIR / output_name)
+        output_path = OUTPUT_DIR / output_name
+        _write_csv(rows, output_path)
+        remote_url = _publish_csv_to_cos(output_path, output_name)
         return jsonify(
             {
                 "output_csv": output_name,
@@ -2476,6 +2544,7 @@ def generate_thermometer_merge() -> object:
                 "date_begin_used": start_date_used.isoformat(),
                 "date_end": date_end.isoformat(),
                 "columns": header,
+                "remote_url": remote_url,
             }
         )
     except FileNotFoundError as exc:

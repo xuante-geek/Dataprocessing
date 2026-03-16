@@ -105,6 +105,27 @@
   - `python3 -m playwright install chromium`
   - `python3 src/app.py`
 
+## V3_Feature2：发布 CSV 到远程 COS
+
+在生成本地 CSV 后，程序会自动同步发布到腾讯云 COS（同名覆盖）：
+- `ERP_Interval.csv` → `https://anexus-data-1399092305.cos.ap-guangzhou.myqcloud.com/data/ERP_Interval.csv`
+- `Market_Thermometer.csv` → `https://anexus-data-1399092305.cos.ap-guangzhou.myqcloud.com/data/Market_Thermometer.csv`
+
+运行前请配置环境变量（必须）：
+- `COS_SECRET_ID`
+- `COS_SECRET_KEY`
+
+可选环境变量（未配置时使用默认值）：
+- `COS_BUCKET`（默认：`anexus-data-1399092305`）
+- `COS_REGION`（默认：`ap-guangzhou`）
+- `COS_BASE_PATH`（默认：`data`）
+
+发布接口返回中会包含 `remote_url` 字段，用于确认远程地址。
+
+## V3_Feature4：读取 .env
+
+支持从项目根目录的 `.env` 自动读取 COS 配置，避免每次手动 `export`。示例见 `.env.example`。
+
 ## V3 Feature2：统一 UI 风格（DataDownload 风格）
 
 界面整体视觉统一为 DataDownload 控制台风格：

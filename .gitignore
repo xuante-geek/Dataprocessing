@@ -16,3 +16,4 @@ docs/data/*.csv
 docs/data/*.xlsx
 logs/
 data/
+.env
