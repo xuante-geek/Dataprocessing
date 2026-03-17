@@ -1636,7 +1636,7 @@ def _compute_erp_interval_bands(
     erp_rows: list[list[object]],
     *,
     start_date: dt.date,
-    end_date: dt.date,
+    end_date: dt.date | None,
 ) -> tuple[dt.date, dt.date, dt.date, dt.date, list[list[object]], float, float]:
     if not erp_rows or len(erp_rows) < 2:
         raise ValueError("ERP 数据为空")
@@ -1658,6 +1658,8 @@ def _compute_erp_interval_bands(
 
     earliest = dates[0]
     latest = dates[-1]
+    if end_date is None:
+        end_date = latest
     if start_date < earliest:
         raise ValueError(f"起始日期过早：最早日期为 {earliest.isoformat()}")
     if start_date > latest:
@@ -1977,8 +1979,10 @@ def generate_erp_interval() -> object:
         except ValueError as exc:
             raise ValueError("起始日期格式必须为 YYYY-MM-DD") from exc
 
+        end_date_defaulted = False
         if end_date_raw is None or (isinstance(end_date_raw, str) and not end_date_raw.strip()):
-            end_date = dt.date.today()
+            end_date = None
+            end_date_defaulted = True
         else:
             if not isinstance(end_date_raw, str):
                 raise ValueError("终止日期格式必须为 YYYY-MM-DD")
@@ -2014,18 +2018,19 @@ def generate_erp_interval() -> object:
         remote_url = _publish_csv_to_cos(csv_path, csv_name)
 
         adjusted = actual_start != start_date
-        adjusted_end = actual_end != end_date
+        adjusted_end = (end_date is not None) and (actual_end != end_date)
         return jsonify(
             {
                 "output_csv": csv_name,
                 "input_start_date": start_date.isoformat(),
                 "used_start_date": actual_start.isoformat(),
-                "input_end_date": end_date.isoformat(),
+                "input_end_date": "" if end_date_defaulted else end_date.isoformat(),
                 "used_end_date": actual_end.isoformat(),
                 "earliest_date": earliest.isoformat(),
                 "latest_date": latest.isoformat(),
                 "adjusted_to_trading_day": adjusted,
                 "adjusted_end_to_trading_day": adjusted_end,
+                "end_date_defaulted": end_date_defaulted,
                 "median": median,
                 "stddevp": stddevp,
                 "remote_url": remote_url,

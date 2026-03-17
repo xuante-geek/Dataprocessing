@@ -531,7 +531,7 @@ const parseIntervalStart = () => {
 const parseIntervalEnd = () => {
   const raw = String(intervalEndInput.value || "").trim();
   if (!raw) {
-    throw new Error("请填写终止日期（YYYY-MM-DD）。");
+    return null;
   }
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(raw)) {
     throw new Error("终止日期格式必须为 YYYY-MM-DD。");
@@ -552,16 +552,19 @@ const generateInterval = async () => {
 
   isBusy = true;
   updateControls();
-  setStatus(`正在导出指定周期 ERP（${startDate} → ${endDate}）...`);
+  const endLabel = endDate ? endDate : "最近交易日";
+  setStatus(`正在导出指定周期 ERP（${startDate} → ${endLabel}）...`);
 
   try {
     const payload = {
       start_date: startDate,
-      end_date: endDate,
       include_yield: Boolean(erpColYield && erpColYield.checked),
       include_pe: Boolean(erpColPe && erpColPe.checked),
       include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
     };
+    if (endDate) {
+      payload.end_date = endDate;
+    }
     const data = await postJson("/api/erpinterval", payload);
     if (data.used_end_date && intervalEndInput.value !== data.used_end_date) {
       intervalEndInput.value = data.used_end_date;
@@ -571,10 +574,12 @@ const generateInterval = async () => {
       : "";
     const adjustedEndNote = data.adjusted_end_to_trading_day
       ? `（非交易日已自动回退为 ${data.used_end_date}）`
-      : "";
+      : data.end_date_defaulted
+        ? "（未填写终止日期，已使用最近交易日）"
+        : "";
     const lines = [
       `起始日期：${data.input_start_date} ${adjustedNote}`.trim(),
-      `终止日期：${data.input_end_date} ${adjustedEndNote}`.trim(),
+      `终止日期：${data.input_end_date || "最近交易日"} ${adjustedEndNote}`.trim(),
       `有效区间：${data.used_start_date} → ${data.used_end_date}`,
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
@@ -847,11 +852,6 @@ syncInternalToggle(internalGdpMode, internalGdpInput);
 syncInternalToggle(internalVolumeMode, internalVolumeInput);
 syncInternalToggle(internalSecuritiesMode, internalSecuritiesInput);
 syncInternalToggle(internalErpMode, internalErpInput);
-const today = new Date();
-const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-  .toISOString()
-  .slice(0, 10);
-intervalEndInput.value = localDate;
 checkService();
 
 if (tabDownload) {
