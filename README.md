@@ -9,7 +9,7 @@
 - 按第一列日期从远到近排序（旧→新）
 - 导出 `CSV`，并额外生成冻结首行/首列的处理后 `Excel`
 
-## 运行（V3 Feature1 已合并 DataDownload）
+## 运行（V3_Feature1 已合并 DataDownload）
 
 1. 安装依赖：
    - `python3 -m pip install -r requirements.txt`
@@ -90,7 +90,7 @@
 
 `Market_Thermometer.csv` 默认对分位、市场温度、全A点位等列做 1 位小数输出，便于展示。
 
-## V3 Feature1：DataDownload 控制台
+## V3_Feature1：DataDownload 控制台
 
 新增第一个 Tab：**DataDownload 控制台**，用于自动下载 Excel 到 `input/`，减少人工拷贝步骤。
 
@@ -105,7 +105,26 @@
   - `python3 -m playwright install chromium`
   - `python3 src/app.py`
 
-## V3_Feature2：发布 CSV 到远程 COS
+## V3_Feature2：统一 UI 风格（DataDownload 风格）
+
+界面整体视觉统一为 DataDownload 控制台风格：
+- 浅蓝背景、白色卡片与更轻的阴影
+- 主要按键为蓝色实心，次要按键为白底描边
+- 表格、状态胶囊、输入框样式统一为清爽扁平化风格
+
+## V3_Feature3：全部运行
+
+新增右上角“全部运行”按键，顺序依次执行：
+1. DataDownload 全部任务
+2. 导出完整周期 ERP
+3. 导出滚动周期 ERP
+4. 导出指定周期 ERP
+5. 导出市场温度计分位数据
+6. 导出市场温度计总表
+
+每一步必须成功后才会触发下一步，任何一步失败将终止并提示错误。
+
+## V3_Feature4：发布 CSV 到远程 COS
 
 在生成本地 CSV 后，程序会自动同步发布到腾讯云 COS（同名覆盖）：
 - `ERP_Interval.csv` → `https://anexus-data-1399092305.cos.ap-guangzhou.myqcloud.com/data/ERP_Interval.csv`
@@ -122,21 +141,14 @@
 
 发布接口返回中会包含 `remote_url` 字段，用于确认远程地址。
 
-## V3_Feature4：读取 .env
+## V3_Feature5：读取 .env
 
 支持从项目根目录的 `.env` 自动读取 COS 配置，避免每次手动 `export`。示例见 `.env.example`。
 
-## V3_Feature3：固定区间终止日期默认最近交易日
+## V3_Feature6：固定区间终止日期默认最近交易日
 
 ERP 指定区间导出时，终止日期输入框默认空白。若用户未填写，程序会自动使用原始 ERP 数据的最近交易日作为终止日期。若用户手动填写，则按填写日期作为区间终止。
 
-## V3 Feature2：统一 UI 风格（DataDownload 风格）
-
-界面整体视觉统一为 DataDownload 控制台风格：
-- 浅蓝背景、白色卡片与更轻的阴影
-- 主要按键为蓝色实心，次要按键为白底描边
-- 表格、状态胶囊、输入框样式统一为清爽扁平化风格
-
-## V3 Feature3：周频对齐优化
+## V3_Feature7：周频对齐优化
 
 `Market_Thermometer` 合并时，GDP 周频去重改为**在共同截止日期内保留当周最新有效值**，避免因周内晚于其它序列的日期而整周被回退（例如本周可用日期是 2/24 时仍可保留 2/24）。

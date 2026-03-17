@@ -9,9 +9,16 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <p class="eyebrow">DataProcessing</p>
-        <h1 id="page-title">DataDownload 控制台</h1>
-        <p id="hero-status" class="subhead"></p>
+        <div class="hero-row">
+          <div class="hero-main">
+            <p class="eyebrow">DataProcessing</p>
+            <h1 id="page-title">DataDownload 控制台</h1>
+            <p id="hero-status" class="subhead"></p>
+          </div>
+          <div class="hero-actions">
+            <button id="run-all" type="button" class="action-btn">全部运行</button>
+          </div>
+        </div>
       </header>
 
       <section class="panel">
@@ -25,7 +32,6 @@
           <div class="download-header">
             <div class="download-actions">
               <button id="download-run-all" type="button" class="action-btn">手动下载（全部）</button>
-              <button id="download-run-selected" type="button" class="action-btn ghost">手动下载（选中）</button>
             </div>
             <div class="download-status">
               <span id="download-global-status" class="status-chip">待机</span>

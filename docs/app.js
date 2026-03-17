@@ -7,10 +7,10 @@ const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
 const downloadRunAllButton = document.getElementById("download-run-all");
-const downloadRunSelectedButton = document.getElementById("download-run-selected");
 const downloadTaskTable = document.getElementById("download-task-table");
 const downloadGlobalStatus = document.getElementById("download-global-status");
 const downloadRunSummary = document.getElementById("download-run-summary");
+const runAllButton = document.getElementById("run-all");
 const thermoStatusText = document.getElementById("thermo-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
@@ -81,9 +81,6 @@ const updateDownloadControls = () => {
   if (downloadRunAllButton) {
     downloadRunAllButton.disabled = disabled;
   }
-  if (downloadRunSelectedButton) {
-    downloadRunSelectedButton.disabled = disabled;
-  }
   document.querySelectorAll(".download-row input, .download-row textarea").forEach((input) => {
     input.disabled = disabled;
   });
@@ -153,6 +150,9 @@ const updateControls = () => {
   }
   if (erpColErpPct) {
     erpColErpPct.disabled = isBusy;
+  }
+  if (runAllButton) {
+    runAllButton.disabled = isBusy || !isServiceAvailable;
   }
   updateDownloadControls();
 };
@@ -271,46 +271,40 @@ const collectDownloadUrls = () => {
   return urls;
 };
 
-const selectedDownloadTaskIds = () => {
-  const ids = [];
-  document.querySelectorAll(".download-row[data-id]").forEach((row) => {
-    const checked = row.querySelector(".download-task-check")?.checked;
-    if (checked) {
-      ids.push(row.dataset.id);
-    }
-  });
-  return ids;
-};
-
-const runDownloadTasks = async (ids) => {
+const runDownloadTasks = async (ids, { silent = false } = {}) => {
   if (downloadRunning) {
-    showModal("提示", "已有下载任务在运行，请稍后再试。");
-    return;
+    if (!silent) {
+      showModal("提示", "已有下载任务在运行，请稍后再试。");
+    }
+    throw new Error("已有下载任务在运行");
   }
   if (!ids.length) {
-    showModal("提示", "请先选择要下载的任务。");
-    return;
-  }
-  try {
-    const payload = {
-      task_ids: ids,
-      urls: collectDownloadUrls(),
-      trigger: "manual",
-    };
-    const res = await fetch("/api/download/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.message || "启动失败");
+    if (!silent) {
+      showModal("提示", "请先选择要下载的任务。");
     }
-    downloadRunning = true;
-    updateDownloadControls();
-  } catch (error) {
-    showModal("启动失败", error.message);
+    throw new Error("未选择下载任务");
   }
+  const payload = {
+    task_ids: ids,
+    urls: collectDownloadUrls(),
+    trigger: "manual",
+  };
+  const res = await fetch("/api/download/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const message = data.message || "启动失败";
+    if (!silent) {
+      showModal("启动失败", message);
+    }
+    throw new Error(message);
+  }
+  downloadRunning = true;
+  updateDownloadControls();
+  return data;
 };
 
 const updateDownloadGlobalStatus = (status) => {
@@ -394,6 +388,47 @@ const buildDownloadModalBody = (status) => {
     rows.push(`<div>${line}</div>`);
   }
   return rows.join("");
+};
+
+const buildDownloadError = (status) => {
+  const messages = [];
+  if (status.message) {
+    messages.push(status.message);
+  }
+  for (const [id, info] of Object.entries(status.tasks || {})) {
+    if (info.status === "error") {
+      const task = downloadTasks.find((t) => t.id === id);
+      const name = task ? task.name : id;
+      const detail = info.message ? `：${info.message}` : "";
+      messages.push(`${name}${detail}`);
+    }
+  }
+  return messages.filter(Boolean).join("\\n") || "下载失败";
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitForDownloadComplete = async () => {
+  const start = Date.now();
+  while (true) {
+    const res = await fetch("/api/download/status");
+    const status = await res.json();
+    downloadRunning = !!status.running;
+    updateDownloadGlobalStatus(status);
+    for (const [id, info] of Object.entries(status.tasks || {})) {
+      updateDownloadTaskRow(id, info);
+    }
+    if (!status.running) {
+      if (status.success) {
+        return status;
+      }
+      throw new Error(buildDownloadError(status));
+    }
+    if (Date.now() - start > 60 * 60 * 1000) {
+      throw new Error("下载超时，请稍后再试。");
+    }
+    await sleep(2000);
+  }
 };
 
 const pollDownloadStatus = async () => {
@@ -814,6 +849,149 @@ const generateThermoMerge = async () => {
   }
 };
 
+const runAll = async () => {
+  if (!isServiceAvailable) {
+    showModal("无法运行", "本地服务未连接，请先启动服务。");
+    return;
+  }
+  if (isBusy || downloadRunning) {
+    showModal("无法运行", "已有任务在运行，请稍后再试。");
+    return;
+  }
+
+  isBusy = true;
+  updateControls();
+  setStatus("正在执行全部运行...");
+
+  try {
+    if (!downloadTasks.length) {
+      await loadDownloadConfig();
+    }
+    const allDownloadIds = downloadTasks.map((task) => task.id);
+
+    await runDownloadTasks(allDownloadIds, { silent: true });
+    await waitForDownloadComplete();
+
+    await postJson("/api/erp", {
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    });
+
+    const n = parseRollingN();
+    await postJson("/api/erprolling", {
+      n,
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    });
+
+    const startDate = parseIntervalStart();
+    const endDate = parseIntervalEnd();
+    const intervalPayload = {
+      start_date: startDate,
+      include_yield: Boolean(erpColYield && erpColYield.checked),
+      include_pe: Boolean(erpColPe && erpColPe.checked),
+      include_erp_percentile: Boolean(erpColErpPct && erpColErpPct.checked),
+    };
+    if (endDate) {
+      intervalPayload.end_date = endDate;
+    }
+    await postJson("/api/erpinterval", intervalPayload);
+
+    const thermoPercentilePayload = {
+      moving_average_gdp: parseIntInRange(maGdpInput.value, 1, 1000, "总市值/GDP平均移动（周频）"),
+      rolling_period_gdp: parseIntInRange(rpGdpInput.value, 1, 1000, "总市值/GDP分位滚动周期（周频）"),
+      internal_gdp_mode: internalGdpMode.value,
+      internal_gdp: parseInternalValue(
+        internalGdpMode,
+        internalGdpInput,
+        1,
+        1000,
+        "总市值/GDP最小递减滚动周期（周频）",
+      ),
+      moving_average_volume: parseIntInRange(maVolumeInput.value, 1, 4000, "成交量平均移动"),
+      rolling_period_volume: parseIntInRange(rpVolumeInput.value, 1, 4000, "成交量/总市值分位滚动周期"),
+      internal_volume_mode: internalVolumeMode.value,
+      internal_volume: parseInternalValue(
+        internalVolumeMode,
+        internalVolumeInput,
+        1,
+        4000,
+        "成交量/总市值最小递减滚动周期",
+      ),
+      moving_average_securities: parseIntInRange(maSecuritiesInput.value, 1, 4000, "融资融券平均移动"),
+      rolling_period_securities: parseIntInRange(rpSecuritiesInput.value, 1, 4000, "融资融券/总市值分位滚动周期"),
+      internal_securities_mode: internalSecuritiesMode.value,
+      internal_securities: parseInternalValue(
+        internalSecuritiesMode,
+        internalSecuritiesInput,
+        1,
+        4000,
+        "融资融券/总市值最小递减滚动周期",
+      ),
+      moving_erp: parseIntInRange(maErpInput.value, 1, 4000, "股权风险溢价平均移动"),
+      rolling_period_erp: parseIntInRange(rpErpInput.value, 1, 4000, "股权风险溢价分位滚动周期"),
+      internal_erp_mode: internalErpMode.value,
+      internal_erp: parseInternalValue(
+        internalErpMode,
+        internalErpInput,
+        1,
+        4000,
+        "股权风险溢价最小递减滚动周期",
+      ),
+      include_window_size: Boolean(windowSizeToggle && windowSizeToggle.checked),
+    };
+    await postJson("/api/thermometer/percentiles", thermoPercentilePayload);
+
+    const thermoMergePayload = {
+      moving_average_gdp: thermoPercentilePayload.moving_average_gdp,
+      rolling_period_gdp: thermoPercentilePayload.rolling_period_gdp,
+      internal_gdp_mode: thermoPercentilePayload.internal_gdp_mode,
+      internal_gdp: thermoPercentilePayload.internal_gdp,
+      moving_average_volume: thermoPercentilePayload.moving_average_volume,
+      rolling_period_volume: thermoPercentilePayload.rolling_period_volume,
+      internal_volume_mode: thermoPercentilePayload.internal_volume_mode,
+      internal_volume: thermoPercentilePayload.internal_volume,
+      moving_average_securities: thermoPercentilePayload.moving_average_securities,
+      rolling_period_securities: thermoPercentilePayload.rolling_period_securities,
+      internal_securities_mode: thermoPercentilePayload.internal_securities_mode,
+      internal_securities: thermoPercentilePayload.internal_securities,
+      moving_erp: thermoPercentilePayload.moving_erp,
+      rolling_period_erp: thermoPercentilePayload.rolling_period_erp,
+      internal_erp_mode: thermoPercentilePayload.internal_erp_mode,
+      internal_erp: thermoPercentilePayload.internal_erp,
+      weight_gdp: parseFloatInRange(wGdpInput.value, 0, 100, "权重：市值/GDP（%）"),
+      weight_volume: parseFloatInRange(wVolumeInput.value, 0, 100, "权重：成交量/市值（%）"),
+      weight_securities_lend: parseFloatInRange(wSecuritiesInput.value, 0, 100, "权重：融资融券/市值（%）"),
+      weight_erp: parseFloatInRange(wErpInput.value, 0, 100, "权重：股权风险溢价分位（%）"),
+      include_gdp_percentile: Boolean(colGdp.checked),
+      include_volume_percentile: Boolean(colVolume.checked),
+      include_securities_percentile: Boolean(colSecurities.checked),
+      include_erp: Boolean(colErp.checked),
+      include_bond_yield: Boolean(colYield.checked),
+    };
+    const weightSum =
+      thermoMergePayload.weight_gdp
+      + thermoMergePayload.weight_volume
+      + thermoMergePayload.weight_securities_lend
+      + thermoMergePayload.weight_erp;
+    if (weightSum > 100.000001) {
+      throw new Error("权重之和不能超过 100%。");
+    }
+    await postJson("/api/thermometer/merge", thermoMergePayload);
+
+    setStatus("全部运行完成。");
+    showModal("全部运行完成", "所有步骤已按顺序完成。");
+  } catch (error) {
+    setStatus("全部运行失败。");
+    showModal("全部运行失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
 erpButton.addEventListener("click", generateErp);
 rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
@@ -825,10 +1003,8 @@ if (downloadRunAllButton) {
     runDownloadTasks(ids);
   });
 }
-if (downloadRunSelectedButton) {
-  downloadRunSelectedButton.addEventListener("click", () => {
-    runDownloadTasks(selectedDownloadTaskIds());
-  });
+if (runAllButton) {
+  runAllButton.addEventListener("click", runAll);
 }
 modalClose.addEventListener("click", hideModal);
 modal.addEventListener("click", (event) => {
