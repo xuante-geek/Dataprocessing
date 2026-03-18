@@ -64,6 +64,7 @@ let downloadRunning = false;
 let downloadLastRunId = null;
 let downloadLastPrompt = null;
 let downloadPollTimer = null;
+let downloadInitialStatusHandled = false;
 let activePanel = "download";
 
 const syncInternalToggle = (modeEl, inputEl) => {
@@ -182,6 +183,20 @@ const checkService = async () => {
     thermoStatusText.textContent = "";
     if (!downloadPollTimer) {
       initDownloadPanel();
+    }
+    if (!window.__autoRunTriggered) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("autorun") === "1") {
+        window.__autoRunTriggered = true;
+        const trigger = () => {
+          if (!isBusy && isServiceAvailable) {
+            runAll();
+          } else {
+            setTimeout(trigger, 300);
+          }
+        };
+        setTimeout(trigger, 500);
+      }
     }
   } catch (error) {
     isServiceAvailable = false;
@@ -360,7 +375,11 @@ const buildDownloadSummary = (status) => {
   }
   const lines = [`运行时间: ${status.started_at} → ${status.ended_at || "进行中"}`];
   lines.push(`触发方式: ${status.trigger || "manual"}`);
-  lines.push(`结果: ${status.success ? "成功" : "失败/部分失败"}`);
+  if (status.running) {
+    lines.push("结果: 进行中");
+  } else {
+    lines.push(`结果: ${status.success ? "成功" : "失败/部分失败"}`);
+  }
   if (status.message) {
     lines.push(`提示: ${status.message}`);
   }
@@ -449,6 +468,16 @@ const pollDownloadStatus = async () => {
     updateDownloadTaskRow(id, info);
   }
 
+  if (!downloadInitialStatusHandled) {
+    downloadInitialStatusHandled = true;
+    if (status.run_id) {
+      downloadLastRunId = status.run_id;
+    }
+    if (status.message) {
+      downloadLastPrompt = status.message;
+    }
+  }
+
   if (status.running && status.message && status.message.includes("扫码") && status.message !== downloadLastPrompt) {
     downloadLastPrompt = status.message;
     showModal("需要登录", status.message);
@@ -459,6 +488,7 @@ const pollDownloadStatus = async () => {
     const title = status.success ? "下载完成" : "下载出现失败";
     showModal(title, buildDownloadModalBody(status));
   }
+
 };
 
 const initDownloadPanel = () => {

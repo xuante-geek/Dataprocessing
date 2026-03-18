@@ -152,3 +152,37 @@ ERP 指定区间导出时，终止日期输入框默认空白。若用户未填�
 ## V3_Feature7：周频对齐优化
 
 `Market_Thermometer` 合并时，GDP 周频去重改为**在共同截止日期内保留当周最新有效值**，避免因周内晚于其它序列的日期而整周被回退（例如本周可用日期是 2/24 时仍可保留 2/24）。
+
+## V3_Feature5：Launchd 定时后台运行
+
+新增 Launchd 定时任务，支持每日自动执行 “下载 → 计算 → 上传 COS”，到点自动打开浏览器并触发“全部运行”。
+若电脑处于睡眠状态，Launchd 不会触发；需要开启系统唤醒能力或设置定时唤醒。
+
+关键文件：
+- `scripts/run_all.py`：无界面一键执行脚本
+- `scripts/install_launchd.sh`：安装 Launchd 任务
+- `scripts/uninstall_launchd.sh`：卸载 Launchd 任务
+
+使用步骤：
+1. 确保 `.env` 已配置 COS 密钥
+2. 安装依赖：
+   - `python3 -m pip install -r requirements.txt`
+3. 安装定时任务（默认每天 18:00 执行）：
+   - `bash scripts/install_launchd.sh`
+   - 自定义时间（例如 07:30）：`bash scripts/install_launchd.sh 7 30`
+   - 不要安装后立刻运行（仅到点运行）：`bash scripts/install_launchd.sh 7 30 no-run`
+4. 查看日志：
+   - `logs/autorun.app.log`
+
+需要调整时间时，可以重新执行安装脚本并传入新时间，或编辑 `~/Library/LaunchAgents/com.xuante.dataprocessing.plist` 内的 `StartCalendarInterval`。
+
+睡眠状态仍需定时运行的设置建议（择一或组合）：
+1. 系统设置开启唤醒能力：
+   - MacBook：系统设置 → 电池 → 选项 → 打开“为网络访问唤醒”（不同系统版本文字略有差异）
+   - Mac mini：系统设置 → 能源节能 → 打开“为网络访问唤醒”
+2. 使用 `pmset` 设置每日定时唤醒（示例：每天 11:55 唤醒）：
+   - `sudo pmset repeat wakeorpoweron MTWRFSU 11:55:00`
+   - 查看当前计划：`pmset -g sched`
+   - 清除计划：`sudo pmset repeat cancel`
+
+提示：如需稳定唤醒，建议设备接电并关闭“自动进入睡眠”或开启“防止显示器关闭时自动睡眠”。

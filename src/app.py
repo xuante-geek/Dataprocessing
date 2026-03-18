@@ -55,6 +55,8 @@ DOWNLOAD_LOCK_PATH = BASE_DIR / "data" / "download.lock"
 DOWNLOAD_LOCK_STALE_SECONDS = 60 * 30
 DOWNLOAD_DEFAULT_WAIT_MS = 5000
 DOWNLOAD_LOGIN_WAIT_SECONDS = 300
+DOWNLOAD_LOGIN_STRICT = True
+DOWNLOAD_LOGIN_USERNAME = "xuante"
 
 COS_DEFAULT_BUCKET = "anexus-data-1399092305"
 COS_DEFAULT_REGION = "ap-guangzhou"
@@ -176,6 +178,7 @@ def _download_ensure_dirs(cfg: dict) -> tuple[Path, Path]:
     return download_dir, user_data_dir
 
 
+
 def _download_acquire_lock() -> bool:
     if DOWNLOAD_LOCK_PATH.exists():
         try:
@@ -187,11 +190,14 @@ def _download_acquire_lock() -> bool:
                     os.kill(pid, 0)
                     return False
                 except OSError:
-                    pass
-            if time.time() - ts > DOWNLOAD_LOCK_STALE_SECONDS:
-                DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
-            else:
-                return False
+                    # 进程已不存在，直接清锁避免后台任务被卡住
+                    DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
+                    pid = None
+            if pid is not None:
+                if time.time() - ts > DOWNLOAD_LOCK_STALE_SECONDS:
+                    DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
+                else:
+                    return False
         except Exception:
             try:
                 DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
@@ -270,14 +276,30 @@ def _download_login_required(page) -> bool:
     keywords = ["微信扫码", "微信扫一扫", "扫码登录", "二维码有效期", "QQ登录", "用户密码登录"]
     if page.is_closed():
         return False
+    if _download_is_logged_in(page):
+        return False
     for keyword in keywords:
         try:
             if page.get_by_text(keyword, exact=False).is_visible():
                 return True
         except Exception:
             pass
+    if DOWNLOAD_LOGIN_STRICT:
+        try:
+            if page.get_by_role("button", name="登录").is_visible():
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _download_is_logged_in(page) -> bool:
+    if page.is_closed():
+        return False
+    if not DOWNLOAD_LOGIN_USERNAME:
+        return False
     try:
-        if page.get_by_role("button", name="登录").is_visible():
+        if page.get_by_text(DOWNLOAD_LOGIN_USERNAME, exact=False).is_visible():
             return True
     except Exception:
         pass
@@ -530,9 +552,13 @@ def _download_perform_task(task: dict, url: str, context, download_dir: Path) ->
     except PlaywrightTimeoutError:
         pass
     if _download_login_required(page):
-        _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
-        _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
-        _download_wait_for_login(page)
+        if DOWNLOAD_ASSUME_LOGGED_IN:
+            _download_update_task_status(task_id, {"status": "running", "message": "检测到登录提示，后台继续尝试"})
+        else:
+            _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
+            _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
+            _download_wait_for_login(page)
+
 
     if task_id == "gdp":
         pass
