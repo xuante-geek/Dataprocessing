@@ -552,12 +552,9 @@ def _download_perform_task(task: dict, url: str, context, download_dir: Path) ->
     except PlaywrightTimeoutError:
         pass
     if _download_login_required(page):
-        if DOWNLOAD_ASSUME_LOGGED_IN:
-            _download_update_task_status(task_id, {"status": "running", "message": "检测到登录提示，后台继续尝试"})
-        else:
-            _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
-            _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
-            _download_wait_for_login(page)
+        _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
+        _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
+        _download_wait_for_login(page)
 
 
     if task_id == "gdp":
