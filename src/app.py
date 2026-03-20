@@ -2588,4 +2588,9 @@ def generate_thermometer_merge() -> object:
 
 if __name__ == "__main__":
     debug = os.environ.get("DP_DEBUG") == "1"
-    app.run(host="127.0.0.1", port=5000, debug=debug, use_reloader=False)
+    port_raw = os.environ.get("DP_PORT", "5000")
+    try:
+        port = int(port_raw)
+    except ValueError:
+        port = 5000
+    app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False)

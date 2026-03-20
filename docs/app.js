@@ -210,15 +210,42 @@ const checkService = async () => {
   }
 };
 
+const parseResponseJson = async (response) => {
+  const raw = await response.text();
+  if (!raw) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    throw new Error(`服务返回了无效 JSON（HTTP ${response.status}）。`);
+  }
+};
+
+const fetchWithServiceMessage = async (url, options) => {
+  try {
+    return await fetch(url, options);
+  } catch (_error) {
+    throw new Error("本地服务连接中断，请确认服务仍在运行。");
+  }
+};
+
+const getResponseErrorMessage = (data, fallback) => {
+  if (!data || typeof data !== "object") {
+    return fallback;
+  }
+  return data.error || data.message || fallback;
+};
+
 const postJson = async (url, payload) => {
-  const response = await fetch(url, {
+  const response = await fetchWithServiceMessage(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {}),
   });
-  const data = await response.json();
+  const data = await parseResponseJson(response);
   if (!response.ok) {
-    throw new Error(data.error || "请求失败。");
+    throw new Error(getResponseErrorMessage(data, `请求失败（HTTP ${response.status}）。`));
   }
   return data;
 };
@@ -262,10 +289,10 @@ const renderDownloadTasks = () => {
 
 const loadDownloadConfig = async () => {
   try {
-    const res = await fetch("/api/download/config");
-    const data = await res.json();
+    const res = await fetchWithServiceMessage("/api/download/config");
+    const data = await parseResponseJson(res);
     if (!res.ok) {
-      throw new Error(data.error || "读取下载配置失败。");
+      throw new Error(getResponseErrorMessage(data, `读取下载配置失败（HTTP ${res.status}）。`));
     }
     downloadTasks = data.tasks || [];
     renderDownloadTasks();
@@ -304,14 +331,14 @@ const runDownloadTasks = async (ids, { silent = false } = {}) => {
     urls: collectDownloadUrls(),
     trigger: "manual",
   };
-  const res = await fetch("/api/download/run", {
+  const res = await fetchWithServiceMessage("/api/download/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await res.json();
+  const data = await parseResponseJson(res);
   if (!res.ok) {
-    const message = data.message || "启动失败";
+    const message = getResponseErrorMessage(data, `启动失败（HTTP ${res.status}）。`);
     if (!silent) {
       showModal("启动失败", message);
     }
@@ -430,8 +457,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitForDownloadComplete = async () => {
   const start = Date.now();
   while (true) {
-    const res = await fetch("/api/download/status");
-    const status = await res.json();
+    const res = await fetchWithServiceMessage("/api/download/status");
+    const status = await parseResponseJson(res);
+    if (!res.ok) {
+      throw new Error(getResponseErrorMessage(status, `读取下载状态失败（HTTP ${res.status}）。`));
+    }
     downloadRunning = !!status.running;
     updateDownloadGlobalStatus(status);
     for (const [id, info] of Object.entries(status.tasks || {})) {
@@ -454,39 +484,52 @@ const pollDownloadStatus = async () => {
   if (!isServiceAvailable) {
     return;
   }
-  const res = await fetch("/api/download/status");
-  const status = await res.json();
-
-  downloadRunning = !!status.running;
-  updateDownloadControls();
-  updateDownloadGlobalStatus(status);
-  if (downloadRunSummary) {
-    downloadRunSummary.innerHTML = buildDownloadSummary(status);
-  }
-
-  for (const [id, info] of Object.entries(status.tasks || {})) {
-    updateDownloadTaskRow(id, info);
-  }
-
-  if (!downloadInitialStatusHandled) {
-    downloadInitialStatusHandled = true;
-    if (status.run_id) {
-      downloadLastRunId = status.run_id;
+  try {
+    const res = await fetchWithServiceMessage("/api/download/status");
+    const status = await parseResponseJson(res);
+    if (!res.ok) {
+      throw new Error(getResponseErrorMessage(status, `读取下载状态失败（HTTP ${res.status}）。`));
     }
-    if (status.message) {
+
+    downloadRunning = !!status.running;
+    updateDownloadControls();
+    updateDownloadGlobalStatus(status);
+    if (downloadRunSummary) {
+      downloadRunSummary.innerHTML = buildDownloadSummary(status);
+    }
+
+    for (const [id, info] of Object.entries(status.tasks || {})) {
+      updateDownloadTaskRow(id, info);
+    }
+
+    if (!downloadInitialStatusHandled) {
+      downloadInitialStatusHandled = true;
+      if (status.run_id) {
+        downloadLastRunId = status.run_id;
+      }
+      if (status.message) {
+        downloadLastPrompt = status.message;
+      }
+    }
+
+    if (status.running && status.message && status.message.includes("扫码") && status.message !== downloadLastPrompt) {
       downloadLastPrompt = status.message;
+      showModal("需要登录", status.message);
     }
-  }
 
-  if (status.running && status.message && status.message.includes("扫码") && status.message !== downloadLastPrompt) {
-    downloadLastPrompt = status.message;
-    showModal("需要登录", status.message);
-  }
-
-  if (status.run_id && status.run_id !== downloadLastRunId && status.ended_at) {
-    downloadLastRunId = status.run_id;
-    const title = status.success ? "下载完成" : "下载出现失败";
-    showModal(title, buildDownloadModalBody(status));
+    if (status.run_id && status.run_id !== downloadLastRunId && status.ended_at) {
+      downloadLastRunId = status.run_id;
+      const title = status.success ? "下载完成" : "下载出现失败";
+      showModal(title, buildDownloadModalBody(status));
+    }
+  } catch (error) {
+    console.error(error);
+    downloadRunning = false;
+    updateDownloadControls();
+    updateDownloadGlobalStatus({ running: false, success: false });
+    if (downloadRunSummary) {
+      downloadRunSummary.innerHTML = "状态读取失败，请稍后重试。";
+    }
   }
 
 };
