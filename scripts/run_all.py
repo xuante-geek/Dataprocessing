@@ -49,6 +49,8 @@ def run_download_all() -> None:
     app.DOWNLOAD_LOGIN_WAIT_SECONDS = 5
     # 后台模式下不使用“登录按钮”判定，避免误判强制切前端
     app.DOWNLOAD_LOGIN_STRICT = False
+    # 后台模式无法扫码，跳过“等待登录”环节，直接尝试下载
+    app.DOWNLOAD_ASSUME_LOGGED_IN = True
 
     if not app._download_acquire_lock():
         raise RuntimeError("下载任务锁定中，请稍后再试")
