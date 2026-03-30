@@ -163,8 +163,8 @@ const checkService = async () => {
     isServiceAvailable = false;
     updateControls();
     updateHeroStatusForPanel();
-    setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5000");
-    showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5000");
+    setStatus("请运行：python src/app.py，然后访问 http://127.0.0.1:5001");
+    showModal("需要启动本地服务", "请运行：python src/app.py，然后用浏览器打开 http://127.0.0.1:5001");
     return;
   }
 

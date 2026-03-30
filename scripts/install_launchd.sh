@@ -6,8 +6,22 @@ PLIST_PATH="$HOME/Library/LaunchAgents/com.xuante.dataprocessing.plist"
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 SCRIPT_PATH="$ROOT_DIR/scripts/run_ui.sh"
 LOG_DIR="$ROOT_DIR/logs"
+REQUIRED_PYTHON="3.9.6"
 
 mkdir -p "$LOG_DIR"
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "缺少虚拟环境：$PYTHON_BIN"
+  echo "请先创建并安装依赖：python3.9 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt"
+  exit 1
+fi
+
+PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+if [ "$PY_VERSION" != "$REQUIRED_PYTHON" ]; then
+  echo "Python 版本不符合要求：当前 $PY_VERSION，要求 $REQUIRED_PYTHON"
+  echo "请使用 Python 3.9.6 重建 .venv"
+  exit 1
+fi
 
 HOUR="${1:-18}"
 MINUTE="${2:-0}"
