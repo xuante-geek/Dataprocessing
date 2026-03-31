@@ -4,44 +4,39 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 LOG_DIR="$ROOT_DIR/logs"
-PORT="${DP_PORT:-5001}"
-URL="http://127.0.0.1:${PORT}/?autorun=1"
-HEALTH_URL="http://127.0.0.1:${PORT}/api/files"
+URL="http://127.0.0.1:5001/?autorun=1"
+REQUIRED_PYTHON="3.9.6"
 
 mkdir -p "$LOG_DIR"
 
-is_dp_service_ready() {
-  curl -sf "$HEALTH_URL" >/dev/null 2>&1
-}
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "缺少虚拟环境：$PYTHON_BIN"
+  echo "请先创建并安装依赖：python3.9 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt"
+  exit 1
+fi
 
-if is_dp_service_ready; then
+PY_VERSION="$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+if [ "$PY_VERSION" != "$REQUIRED_PYTHON" ]; then
+  echo "Python 版本不符合要求：当前 $PY_VERSION，要求 $REQUIRED_PYTHON"
+  echo "请使用 Python 3.9.6 重建 .venv"
+  exit 1
+fi
+
+if lsof -i :5001 >/dev/null 2>&1; then
   open "$URL"
   exit 0
 fi
 
-# Port is occupied by another service (not DataProcessing).
-if lsof -i :"$PORT" >/dev/null 2>&1; then
-  echo "端口 ${PORT} 已被其他进程占用，且不是 DataProcessing 服务。"
-  echo "请先释放端口后重试，或改用其他端口：DP_PORT=5001 bash scripts/run_ui.sh"
-  lsof -nP -iTCP:"$PORT"
-  exit 1
-fi
-
-nohup env DP_PORT="$PORT" "$PYTHON_BIN" "$ROOT_DIR/src/app.py" > "$LOG_DIR/autorun.app.log" 2>&1 &
+"$PYTHON_BIN" "$ROOT_DIR/src/app.py" > "$LOG_DIR/autorun.app.log" 2>&1 &
 SERVER_PID=$!
-disown "$SERVER_PID" 2>/dev/null || true
 
 for _ in {1..50}; do
-  if is_dp_service_ready; then
+  if curl -sf http://127.0.0.1:5001/api/files >/dev/null 2>&1; then
     break
   fi
   sleep 0.2
 done
 
-if ! is_dp_service_ready; then
-  echo "DataProcessing 服务启动失败，请检查日志：$LOG_DIR/autorun.app.log"
-  exit 1
-fi
-
 open "$URL"
-echo "DataProcessing 已启动 (PID: ${SERVER_PID}), 访问: ${URL}"
+
+wait "$SERVER_PID"

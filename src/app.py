@@ -54,11 +54,9 @@ DOWNLOAD_CONFIG_PATH = BASE_DIR / "config" / "download_config.json"
 DOWNLOAD_LOCK_PATH = BASE_DIR / "data" / "download.lock"
 DOWNLOAD_LOCK_STALE_SECONDS = 60 * 30
 DOWNLOAD_DEFAULT_WAIT_MS = 5000
-DOWNLOAD_STUCK_RECOVER_SECONDS = 20
 DOWNLOAD_LOGIN_WAIT_SECONDS = 300
 DOWNLOAD_LOGIN_STRICT = True
 DOWNLOAD_LOGIN_USERNAME = "xuante"
-DOWNLOAD_ASSUME_LOGGED_IN = os.environ.get("DOWNLOAD_ASSUME_LOGGED_IN", "0") == "1"
 
 COS_DEFAULT_BUCKET = "anexus-data-1399092305"
 COS_DEFAULT_REGION = "ap-guangzhou"
@@ -219,61 +217,6 @@ def _download_release_lock() -> None:
         DOWNLOAD_LOCK_PATH.unlink(missing_ok=True)
     except Exception:
         pass
-
-
-def _download_parse_status_ts(value: object) -> Optional[dt.datetime]:
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        return dt.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return None
-
-
-def _download_recover_stuck_status_if_needed() -> None:
-    should_release_lock = False
-    with DOWNLOAD_STATUS_LOCK:
-        if not DOWNLOAD_STATUS.get("running"):
-            return
-
-        tasks_map = DOWNLOAD_STATUS.get("tasks")
-        if not isinstance(tasks_map, dict) or not tasks_map:
-            return
-        task_infos = [info for info in tasks_map.values() if isinstance(info, dict)]
-        if not task_infos:
-            return
-
-        progressed = any(info.get("started_at") or info.get("ended_at") for info in task_infos)
-        if not progressed:
-            return
-
-        has_active_task = any(info.get("status") in ("running", "waiting_login") for info in task_infos)
-        if has_active_task:
-            return
-
-        latest_activity: Optional[dt.datetime] = _download_parse_status_ts(DOWNLOAD_STATUS.get("started_at"))
-        for info in task_infos:
-            for key in ("started_at", "ended_at"):
-                ts = _download_parse_status_ts(info.get(key))
-                if ts is not None and (latest_activity is None or ts > latest_activity):
-                    latest_activity = ts
-        if latest_activity is None:
-            return
-
-        idle_seconds = (dt.datetime.now() - latest_activity).total_seconds()
-        if idle_seconds < DOWNLOAD_STUCK_RECOVER_SECONDS:
-            return
-
-        any_error = any(info.get("status") == "error" for info in task_infos)
-        DOWNLOAD_STATUS["running"] = False
-        DOWNLOAD_STATUS["ended_at"] = _download_now_ts()
-        DOWNLOAD_STATUS["success"] = not any_error
-        if not DOWNLOAD_STATUS.get("message"):
-            DOWNLOAD_STATUS["message"] = "完成" if not any_error else "部分任务失败"
-        should_release_lock = True
-
-    if should_release_lock:
-        _download_release_lock()
 
 
 def _download_set_status(update: dict) -> None:
@@ -609,12 +552,9 @@ def _download_perform_task(task: dict, url: str, context, download_dir: Path) ->
     except PlaywrightTimeoutError:
         pass
     if _download_login_required(page):
-        if DOWNLOAD_ASSUME_LOGGED_IN:
-            _download_update_task_status(task_id, {"status": "running", "message": "检测到登录提示，后台继续尝试"})
-        else:
-            _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
-            _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
-            _download_wait_for_login(page)
+        _download_update_task_status(task_id, {"status": "waiting_login", "message": "等待扫码登录"})
+        _download_set_status({"message": "需要登录：请在弹出的浏览器中扫码登录后再继续。"})
+        _download_wait_for_login(page)
 
 
     if task_id == "gdp":
@@ -1868,7 +1808,6 @@ def download_run() -> object:
 
 @app.get("/api/download/status")
 def download_status() -> object:
-    _download_recover_stuck_status_if_needed()
     with DOWNLOAD_STATUS_LOCK:
         status_copy = json.loads(json.dumps(DOWNLOAD_STATUS))
     return jsonify(status_copy)
@@ -2646,9 +2585,4 @@ def generate_thermometer_merge() -> object:
 
 if __name__ == "__main__":
     debug = os.environ.get("DP_DEBUG") == "1"
-    port_raw = os.environ.get("DP_PORT", "5000")
-    try:
-        port = int(port_raw)
-    except ValueError:
-        port = 5000
-    app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False)
+    app.run(host="127.0.0.1", port=5001, debug=debug, use_reloader=False)

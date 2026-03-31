@@ -11,16 +11,22 @@
 
 ## 运行（V3_Feature1 已合并 DataDownload）
 
-1. 安装依赖：
-   - `python3 -m pip install -r requirements.txt`
-2. 安装浏览器内核（仅首次需要）：
-   - `python3 -m playwright install chromium`
-3. 启动服务：
-   - `python3 src/app.py`
-4. 打开：
-   - `http://127.0.0.1:5000`
+1. 固定 Python 主版本（两台机器统一）：
+   - `python3 --version` 应为 `3.9.6`
+   - 项目已提供 `.python-version`，建议配合 `pyenv` 使用
+2. 创建并激活虚拟环境（统一使用 `.venv`）：
+   - `python3.9 -m venv .venv`
+   - `source .venv/bin/activate`
+3. 安装依赖（固定版本）：
+   - `python -m pip install -r requirements.txt`
+4. 安装浏览器内核（仅首次需要）：
+   - `python -m playwright install chromium`
+5. 启动服务：
+   - `python src/app.py`
+6. 打开：
+   - `http://127.0.0.1:5001`
 
-注意：请确保“安装依赖”和“启动服务”使用同一个 `python3` 解释器，否则会出现 `缺少依赖：playwright` 的报错。
+注意：`scripts/run_ui.sh` 与 `scripts/install_launchd.sh` 会强制检查 `.venv` 和 Python `3.9.6`。
 
 ## 目录约定
 
@@ -101,9 +107,10 @@
 
 常见问题：
 - 若提示 `缺少依赖：playwright`，请确保使用同一个 `python3` 执行：
-  - `python3 -m pip install -r requirements.txt`
-  - `python3 -m playwright install chromium`
-  - `python3 src/app.py`
+  - `source .venv/bin/activate`
+  - `python -m pip install -r requirements.txt`
+  - `python -m playwright install chromium`
+  - `python src/app.py`
 
 ## V3_Feature2：统一 UI 风格（DataDownload 风格）
 
@@ -165,8 +172,9 @@ ERP 指定区间导出时，终止日期输入框默认空白。若用户未填�
 
 使用步骤：
 1. 确保 `.env` 已配置 COS 密钥
-2. 安装依赖：
-   - `python3 -m pip install -r requirements.txt`
+2. 确保使用 `.venv`（Python 3.9.6）并安装依赖：
+   - `source .venv/bin/activate`
+   - `python -m pip install -r requirements.txt`
 3. 安装定时任务（默认每天 18:00 执行）：
    - `bash scripts/install_launchd.sh`
    - 自定义时间（例如 07:30）：`bash scripts/install_launchd.sh 7 30`
