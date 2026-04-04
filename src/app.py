@@ -57,6 +57,8 @@ DOWNLOAD_DEFAULT_WAIT_MS = 5000
 DOWNLOAD_LOGIN_WAIT_SECONDS = 300
 DOWNLOAD_LOGIN_STRICT = True
 DOWNLOAD_LOGIN_USERNAME = "xuante"
+DOWNLOAD_FINALIZE_GRACE_SECONDS = 10
+DOWNLOAD_TERMINAL_STATUSES = {"success", "error"}
 
 COS_DEFAULT_BUCKET = "anexus-data-1399092305"
 COS_DEFAULT_REGION = "ap-guangzhou"
@@ -73,6 +75,7 @@ DOWNLOAD_STATUS = {
     "trigger": None,
     "started_at": None,
     "ended_at": None,
+    "last_progress_at": None,
     "success": None,
     "message": "",
     "tasks": {},
@@ -222,6 +225,7 @@ def _download_release_lock() -> None:
 def _download_set_status(update: dict) -> None:
     with DOWNLOAD_STATUS_LOCK:
         DOWNLOAD_STATUS.update(update)
+        DOWNLOAD_STATUS["last_progress_at"] = _download_now_ts()
 
 
 def _download_update_task_status(task_id: str, update: dict) -> None:
@@ -229,6 +233,7 @@ def _download_update_task_status(task_id: str, update: dict) -> None:
         if task_id not in DOWNLOAD_STATUS["tasks"]:
             DOWNLOAD_STATUS["tasks"][task_id] = {}
         DOWNLOAD_STATUS["tasks"][task_id].update(update)
+        DOWNLOAD_STATUS["last_progress_at"] = _download_now_ts()
 
 
 def _download_reset_task_status(tasks: list[dict]) -> None:
@@ -244,10 +249,56 @@ def _download_reset_task_status(tasks: list[dict]) -> None:
             }
             for task in tasks
         }
+        DOWNLOAD_STATUS["last_progress_at"] = _download_now_ts()
 
 
 def _download_now_ts() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _download_parse_ts(value: Optional[str]) -> Optional[dt.datetime]:
+    if not value:
+        return None
+    try:
+        return dt.datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _download_tasks_all_terminal(tasks: dict[str, dict]) -> bool:
+    return bool(tasks) and all((info or {}).get("status") in DOWNLOAD_TERMINAL_STATUSES for info in tasks.values())
+
+
+def _download_finalize_stuck_run_if_needed() -> bool:
+    released = False
+    finalized = False
+    with DOWNLOAD_STATUS_LOCK:
+        if not DOWNLOAD_STATUS["running"]:
+            return False
+        tasks = DOWNLOAD_STATUS.get("tasks") or {}
+        if not _download_tasks_all_terminal(tasks):
+            return False
+        last_progress = _download_parse_ts(DOWNLOAD_STATUS.get("last_progress_at")) or _download_parse_ts(
+            DOWNLOAD_STATUS.get("started_at")
+        )
+        if last_progress is None:
+            return False
+        elapsed = (dt.datetime.now() - last_progress).total_seconds()
+        if elapsed < DOWNLOAD_FINALIZE_GRACE_SECONDS:
+            return False
+        success = all((info or {}).get("status") == "success" for info in tasks.values())
+        DOWNLOAD_STATUS["running"] = False
+        DOWNLOAD_STATUS["ended_at"] = _download_now_ts()
+        DOWNLOAD_STATUS["success"] = success
+        DOWNLOAD_STATUS["message"] = "完成" if success else "部分任务失败"
+        DOWNLOAD_STATUS["last_progress_at"] = DOWNLOAD_STATUS["ended_at"]
+        finalized = True
+        released = DOWNLOAD_LOCK_PATH.exists()
+    if released:
+        _download_release_lock()
+    if finalized:
+        app.logger.warning("download run auto-finalized after %ss without progress", DOWNLOAD_FINALIZE_GRACE_SECONDS)
+    return finalized
 
 
 def _download_click_button_by_text(page, text: str) -> None:
@@ -641,6 +692,7 @@ class _DownloadRunner:
         self.thread: Optional[threading.Thread] = None
 
     def start(self, task_ids: list[str], urls: dict[str, str], trigger: str) -> bool:
+        _download_finalize_stuck_run_if_needed()
         with DOWNLOAD_STATUS_LOCK:
             if DOWNLOAD_STATUS["running"]:
                 return False
@@ -649,6 +701,7 @@ class _DownloadRunner:
             DOWNLOAD_STATUS["trigger"] = trigger
             DOWNLOAD_STATUS["started_at"] = _download_now_ts()
             DOWNLOAD_STATUS["ended_at"] = None
+            DOWNLOAD_STATUS["last_progress_at"] = DOWNLOAD_STATUS["started_at"]
             DOWNLOAD_STATUS["success"] = None
             DOWNLOAD_STATUS["message"] = ""
         self.thread = threading.Thread(
@@ -1920,6 +1973,7 @@ def download_run() -> object:
 
 @app.get("/api/download/status")
 def download_status() -> object:
+    _download_finalize_stuck_run_if_needed()
     with DOWNLOAD_STATUS_LOCK:
         status_copy = json.loads(json.dumps(DOWNLOAD_STATUS))
     return jsonify(status_copy)
