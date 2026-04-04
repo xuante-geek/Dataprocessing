@@ -67,6 +67,34 @@
         "freq": "day",
         "freq_ratio": 0.8
       }
+    },
+    {
+      "id": "sp500_index",
+      "name": "标普500",
+      "url": "https://www.touzid.com/indice/fundamental.html#/US.INX",
+      "range": "20y",
+      "range_xpath": "/html/body/div/div[2]/div[2]/div/div[2]/div/div[1]/div[1]/form/div/div/div[2]/label[2]",
+      "freq": "day",
+      "output_name": "data_SP500",
+      "validation": {
+        "min_span_years": 19,
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
+    },
+    {
+      "id": "nasdaq_index",
+      "name": "纳斯达克",
+      "url": "https://www.touzid.com/indice/fundamental.html#/US.IXIC",
+      "range": "20y",
+      "range_xpath": "/html/body/div[1]/div[2]/div[2]/div/div[2]/div/div[1]/div[1]/form/div/div/div[2]/label[2]",
+      "freq": "day",
+      "output_name": "data_NASDAQ",
+      "validation": {
+        "min_span_years": 19,
+        "freq": "day",
+        "freq_ratio": 0.8
+      }
     }
   ]
 }

@@ -3,15 +3,20 @@ const rollingButton = document.getElementById("rolling");
 const intervalButton = document.getElementById("interval");
 const thermoPercentileButton = document.getElementById("thermo-percentile");
 const thermoMergeButton = document.getElementById("thermo-merge");
+const sp500AverageExportButton = document.getElementById("sp500-average-export");
+const nasdaqAverageExportButton = document.getElementById("nasdaq-average-export");
 const rollingNInput = document.getElementById("rolling-n");
 const intervalStartInput = document.getElementById("interval-start");
 const intervalEndInput = document.getElementById("interval-end");
+const sp500AverageInput = document.getElementById("sp500-average");
+const nasdaqAverageInput = document.getElementById("nasdaq-average");
 const downloadRunAllButton = document.getElementById("download-run-all");
 const downloadTaskTable = document.getElementById("download-task-table");
 const downloadGlobalStatus = document.getElementById("download-global-status");
 const downloadRunSummary = document.getElementById("download-run-summary");
 const runAllButton = document.getElementById("run-all");
 const thermoStatusText = document.getElementById("thermo-status");
+const usStatusText = document.getElementById("us-status");
 const maGdpInput = document.getElementById("ma-gdp");
 const rpGdpInput = document.getElementById("rp-gdp");
 const internalGdpInput = document.getElementById("internal-gdp");
@@ -53,9 +58,11 @@ const heroStatusText = document.getElementById("hero-status");
 const tabDownload = document.getElementById("tab-download");
 const tabErp = document.getElementById("tab-erp");
 const tabThermo = document.getElementById("tab-thermo");
+const tabUs = document.getElementById("tab-us");
 const panelDownload = document.getElementById("panel-download");
 const panelErp = document.getElementById("panel-erp");
 const panelThermo = document.getElementById("panel-thermo");
+const panelUs = document.getElementById("panel-us");
 
 let isBusy = false;
 let isServiceAvailable = false;
@@ -115,6 +122,18 @@ const updateControls = () => {
   intervalEndInput.disabled = isBusy;
   thermoPercentileButton.disabled = isBusy || !isServiceAvailable;
   thermoMergeButton.disabled = isBusy || !isServiceAvailable;
+  if (sp500AverageExportButton) {
+    sp500AverageExportButton.disabled = isBusy || !isServiceAvailable;
+  }
+  if (nasdaqAverageExportButton) {
+    nasdaqAverageExportButton.disabled = isBusy || !isServiceAvailable;
+  }
+  if (sp500AverageInput) {
+    sp500AverageInput.disabled = isBusy;
+  }
+  if (nasdaqAverageInput) {
+    nasdaqAverageInput.disabled = isBusy;
+  }
   maGdpInput.disabled = isBusy;
   rpGdpInput.disabled = isBusy;
   internalGdpMode.disabled = isBusy;
@@ -709,17 +728,27 @@ const setActivePanel = (name) => {
   const isDownload = name === "download";
   const isErp = name === "erp";
   const isThermo = name === "thermo";
+  const isUs = name === "us";
   tabDownload.classList.toggle("active", isDownload);
   tabErp.classList.toggle("active", isErp);
   tabThermo.classList.toggle("active", isThermo);
+  if (tabUs) {
+    tabUs.classList.toggle("active", isUs);
+    tabUs.setAttribute("aria-selected", String(isUs));
+  }
   tabDownload.setAttribute("aria-selected", String(isDownload));
   tabErp.setAttribute("aria-selected", String(isErp));
   tabThermo.setAttribute("aria-selected", String(isThermo));
   panelDownload.classList.toggle("hidden", !isDownload);
   panelErp.classList.toggle("hidden", !isErp);
   panelThermo.classList.toggle("hidden", !isThermo);
+  if (panelUs) {
+    panelUs.classList.toggle("hidden", !isUs);
+  }
   pageTitle.textContent = isDownload
     ? "DataDownload 控制台"
+    : isUs
+      ? "美股指数计算器"
     : isThermo
       ? "市场温度计"
       : "股权风险溢价（ERP）处理器";
@@ -922,6 +951,69 @@ const generateThermoMerge = async () => {
   }
 };
 
+const parseUsAverage = (inputEl, label) => {
+  if (!inputEl) {
+    throw new Error(`${label} 输入框不存在。`);
+  }
+  return parseIntInRange(inputEl.value, 0, 4000, label);
+};
+
+const generateUsAverage = async ({ endpoint, inputEl, label, outputName }) => {
+  let averageWindow;
+  try {
+    averageWindow = parseUsAverage(inputEl, label);
+  } catch (error) {
+    showModal("参数错误", error.message);
+    return;
+  }
+
+  isBusy = true;
+  updateControls();
+  if (usStatusText) {
+    usStatusText.textContent = `正在导出${outputName}...`;
+  }
+
+  try {
+    const data = await postJson(endpoint, { average_window: averageWindow });
+    if (usStatusText) {
+      usStatusText.textContent = "导出完成。";
+    }
+    const lines = [
+      `输入均线变量：${data.input_average_window}`,
+      `实际计算窗口：${data.effective_average_window}`,
+      "已生成：",
+      data.output_csv ? `- docs/data/${data.output_csv}` : null,
+    ].filter(Boolean);
+    showModal("完成", lines.join("\n"));
+  } catch (error) {
+    if (usStatusText) {
+      usStatusText.textContent = "导出失败。";
+    }
+    showModal("导出失败", error.message);
+  } finally {
+    isBusy = false;
+    updateControls();
+  }
+};
+
+const generateSp500Average = async () => {
+  await generateUsAverage({
+    endpoint: "/api/us/sp500/average",
+    inputEl: sp500AverageInput,
+    label: "标普500均线变量",
+    outputName: "标普500均线数据",
+  });
+};
+
+const generateNasdaqAverage = async () => {
+  await generateUsAverage({
+    endpoint: "/api/us/nasdaq/average",
+    inputEl: nasdaqAverageInput,
+    label: "纳斯达克均线变量",
+    outputName: "纳斯达克均线数据",
+  });
+};
+
 const runAll = async () => {
   if (!isServiceAvailable) {
     showModal("无法运行", "本地服务未连接，请先启动服务。");
@@ -1054,6 +1146,16 @@ const runAll = async () => {
     }
     await postJson("/api/thermometer/merge", thermoMergePayload);
 
+    const sp500AverageWindow = parseUsAverage(sp500AverageInput, "标普500均线变量");
+    await postJson("/api/us/sp500/average", {
+      average_window: sp500AverageWindow,
+    });
+
+    const nasdaqAverageWindow = parseUsAverage(nasdaqAverageInput, "纳斯达克均线变量");
+    await postJson("/api/us/nasdaq/average", {
+      average_window: nasdaqAverageWindow,
+    });
+
     setStatus("全部运行完成。");
     showModal("全部运行完成", "所有步骤已按顺序完成。");
   } catch (error) {
@@ -1070,6 +1172,12 @@ rollingButton.addEventListener("click", generateRolling);
 intervalButton.addEventListener("click", generateInterval);
 thermoPercentileButton.addEventListener("click", generateThermoPercentiles);
 thermoMergeButton.addEventListener("click", generateThermoMerge);
+if (sp500AverageExportButton) {
+  sp500AverageExportButton.addEventListener("click", generateSp500Average);
+}
+if (nasdaqAverageExportButton) {
+  nasdaqAverageExportButton.addEventListener("click", generateNasdaqAverage);
+}
 if (downloadRunAllButton) {
   downloadRunAllButton.addEventListener("click", () => {
     const ids = downloadTasks.map((task) => task.id);
@@ -1108,4 +1216,7 @@ if (tabDownload) {
 }
 tabErp.addEventListener("click", () => setActivePanel("erp"));
 tabThermo.addEventListener("click", () => setActivePanel("thermo"));
+if (tabUs) {
+  tabUs.addEventListener("click", () => setActivePanel("us"));
+}
 setActivePanel("download");

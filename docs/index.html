@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DataProcessing - Excel 转 CSV</title>
-    <link rel="stylesheet" href="styles.css?v=20260318g">
+    <link rel="stylesheet" href="styles.css?v=20260403a">
   </head>
   <body>
     <main class="shell">
@@ -26,6 +26,7 @@
           <button id="tab-download" class="tab active" type="button" role="tab" aria-selected="true">DataDownload</button>
           <button id="tab-erp" class="tab" type="button" role="tab" aria-selected="false">ERP</button>
           <button id="tab-thermo" class="tab" type="button" role="tab" aria-selected="false">市场温度计</button>
+          <button id="tab-us" class="tab" type="button" role="tab" aria-selected="false">美股指数</button>
         </div>
 
         <div id="panel-download" class="panel-body">
@@ -250,6 +251,40 @@
             </div>
           </div>
         </div>
+
+        <div id="panel-us" class="panel-body hidden">
+          <div class="us-grid">
+            <div class="us-col">
+              <button id="sp500-average-export" type="button" class="action-btn">导出标普500均线数据</button>
+              <div class="control">
+                <label for="sp500-average">标普500均线变量</label>
+                <div class="select-wrap">
+                  <input id="sp500-average" type="number" min="0" max="4000" step="1" value="850" />
+                </div>
+              </div>
+            </div>
+
+            <div class="us-col">
+              <button id="nasdaq-average-export" type="button" class="action-btn">导出纳斯达克均线数据</button>
+              <div class="control">
+                <label for="nasdaq-average">纳斯达克均线变量</label>
+                <div class="select-wrap">
+                  <input id="nasdaq-average" type="number" min="0" max="4000" step="1" value="850" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status-row">
+            <span id="us-status" class="status" aria-live="polite"></span>
+          </div>
+
+          <div class="hint">
+            <p class="hint-title">说明</p>
+            <p class="hint-body">程序会读取 <span class="path">input/data_SP500.xlsx</span> 与 <span class="path">input/data_NASDAQ.xlsx</span>，保留“日期、收盘点位”，排序并清洗无效行后计算均线“参考线”。</p>
+            <p class="hint-body">输出：<span class="path">SP500_Average.csv</span>、<span class="path">NASDAQ_Average.csv</span>。</p>
+          </div>
+        </div>
       </section>
     </main>
 
@@ -261,6 +296,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=20260318g"></script>
+    <script src="app.js?v=20260403a"></script>
   </body>
 </html>

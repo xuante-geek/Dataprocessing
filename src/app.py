@@ -261,6 +261,26 @@ def _download_click_button_by_text(page, text: str) -> None:
     page.get_by_text(text, exact=True).first.click(timeout=5000)
 
 
+def _download_click_by_xpath(page, xpath: str) -> bool:
+    if not xpath:
+        return False
+    selectors = [f"xpath={xpath}", xpath]
+    for selector in selectors:
+        try:
+            loc = page.locator(selector)
+            if loc.count() > 0:
+                target = loc.first
+                try:
+                    target.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
+                target.click(timeout=5000, force=True)
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _download_click_download_excel(page) -> None:
     try:
         loc = page.get_by_role("button", name=re.compile("EXCEL"))
@@ -573,6 +593,13 @@ def _download_perform_task(task: dict, url: str, context, download_dir: Path) ->
         _download_wait_chart_update(page)
     elif task_id == "national_debt":
         _download_click_button_by_text(page, "20年")
+        _download_wait_chart_update(page)
+    elif task_id in ("sp500_index", "nasdaq_index"):
+        if not _download_click_by_xpath(page, str(task.get("range_xpath", "")).strip()):
+            _download_click_button_by_text(page, "20年")
+        _download_wait_chart_update(page)
+        _download_open_freq_dropdown(page)
+        _download_select_dropdown_option(page, "日")
         _download_wait_chart_update(page)
     else:
         raise RuntimeError(f"未知任务: {task_id}")
@@ -1564,6 +1591,91 @@ def _process_ratio_file(source_path: Path, *, metric_header: str) -> list[list[o
     output.extend([[date.isoformat(), ratio] for date, ratio in rows])
     return output
 
+
+def _process_us_index_file(source_path: Path, *, index_name: str) -> list[list[object]]:
+    workbook = openpyxl.load_workbook(source_path, data_only=True, read_only=True)
+    try:
+        sheet_name = workbook.sheetnames[0] if workbook.sheetnames else None
+        if not sheet_name:
+            raise ValueError(f"{index_name}：未找到可用工作表")
+        sheet = workbook[sheet_name]
+        rows_iter = _iter_rows_values(sheet, last_col=8)  # A-H
+        header = next(rows_iter, None)
+        if not header:
+            raise ValueError(f"{index_name}：未找到标题行")
+
+        _ = _validate_header_cell(header[0])
+        _ = _validate_header_cell(header[7])
+
+        rows: list[tuple[dt.date, float]] = []
+        for values in rows_iter:
+            if all(value is None or (isinstance(value, str) and not value.strip()) for value in values):
+                continue
+            try:
+                date = _parse_date(values[0], epoch=workbook.epoch)
+                close = _coerce_float(values[7])
+            except Exception:
+                # 无效行直接删除（日期不合法、收盘点位空白或非数字）
+                continue
+            rows.append((date, close))
+
+        if not rows:
+            raise ValueError(f"{index_name}：清洗后没有可用数据行")
+
+        rows.sort(key=lambda item: item[0])
+        output: list[list[object]] = [["日期", "收盘点位"]]
+        output.extend([[date.isoformat(), close] for date, close in rows])
+        return output
+    finally:
+        workbook.close()
+
+
+def _build_us_average_rows(
+    clean_rows: list[list[object]],
+    *,
+    average_window: int,
+    index_name: str,
+) -> tuple[list[list[object]], int]:
+    if not isinstance(average_window, int):
+        raise ValueError("均线变量必须为整数")
+    if average_window < 0 or average_window > 4000:
+        raise ValueError("均线变量超出范围（0-4000）")
+
+    effective_window = 1 if average_window == 0 else average_window
+    data_rows = clean_rows[1:]
+    if not data_rows:
+        raise ValueError(f"{index_name}：没有可用数据行")
+
+    dates: list[str] = []
+    close_values: list[float] = []
+    for row_index, row in enumerate(data_rows, start=2):
+        try:
+            date_text = str(row[0])
+            _ = dt.date.fromisoformat(date_text)
+            close_value = row[1]
+            if not isinstance(close_value, (int, float)):
+                raise ValueError("收盘点位不是数值")
+            dates.append(date_text)
+            close_values.append(float(close_value))
+        except Exception as exc:
+            raise ValueError(f"{index_name} 第 {row_index} 行数据不合法：{exc}") from exc
+
+    ma_values = _moving_average(close_values, effective_window)
+    output: list[list[object]] = [["日期", "收盘点位", "参考线"]]
+    for index, date_text in enumerate(dates):
+        ma_value = ma_values[index]
+        if ma_value is None:
+            continue
+        output.append([date_text, close_values[index], ma_value])
+
+    if len(output) <= 1:
+        raise ValueError(
+            f"{index_name} 数据不足：均线变量={average_window}（实际窗口={effective_window}）导致无可导出结果"
+        )
+
+    return output, effective_window
+
+
 def _rolling_median(sorted_window: list[float]) -> float:
     size = len(sorted_window)
     if size == 0:
@@ -2095,6 +2207,90 @@ def generate_thermometer_clean() -> object:
                     "ratio_volume_csv": outputs["ratio_volume"],
                     "ratio_securities_lend_csv": outputs["ratio_securities_lend"],
                 }
+            }
+        )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+def _parse_average_window_payload(payload: dict, *, field_name: str = "average_window") -> int:
+    raw = payload.get(field_name, 850)
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            raw = 850
+        else:
+            try:
+                raw = int(text)
+            except ValueError as exc:
+                raise ValueError("均线变量必须为整数（0-4000）") from exc
+    if not isinstance(raw, int):
+        raise ValueError("均线变量必须为整数（0-4000）")
+    if raw < 0 or raw > 4000:
+        raise ValueError("均线变量超出范围（0-4000）")
+    return raw
+
+
+@app.post("/api/us/sp500/average")
+def generate_sp500_average() -> object:
+    payload = request.get_json(silent=True) or {}
+    try:
+        average_window = _parse_average_window_payload(payload)
+        source_path = _find_input_xlsx("data_SP500")
+        clean_rows = _process_us_index_file(source_path, index_name="标普500")
+        output_rows, effective_window = _build_us_average_rows(
+            clean_rows,
+            average_window=average_window,
+            index_name="标普500",
+        )
+        csv_name = "SP500_Average.csv"
+        csv_path = OUTPUT_DIR / csv_name
+        _write_csv(output_rows, csv_path)
+        remote_url = _publish_csv_to_cos(csv_path, csv_name)
+        return jsonify(
+            {
+                "output_csv": csv_name,
+                "input_average_window": average_window,
+                "effective_average_window": effective_window,
+                "rows": len(output_rows) - 1,
+                "remote_url": remote_url,
+            }
+        )
+    except FileNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover
+        return jsonify({"error": f"生成失败：{exc}"}), 500
+
+
+@app.post("/api/us/nasdaq/average")
+def generate_nasdaq_average() -> object:
+    payload = request.get_json(silent=True) or {}
+    try:
+        average_window = _parse_average_window_payload(payload)
+        source_path = _find_input_xlsx("data_NASDAQ")
+        clean_rows = _process_us_index_file(source_path, index_name="纳斯达克")
+        output_rows, effective_window = _build_us_average_rows(
+            clean_rows,
+            average_window=average_window,
+            index_name="纳斯达克",
+        )
+        csv_name = "NASDAQ_Average.csv"
+        csv_path = OUTPUT_DIR / csv_name
+        _write_csv(output_rows, csv_path)
+        remote_url = _publish_csv_to_cos(csv_path, csv_name)
+        return jsonify(
+            {
+                "output_csv": csv_name,
+                "input_average_window": average_window,
+                "effective_average_window": effective_window,
+                "rows": len(output_rows) - 1,
+                "remote_url": remote_url,
             }
         )
     except FileNotFoundError as exc:

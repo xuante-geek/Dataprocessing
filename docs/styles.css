@@ -493,6 +493,25 @@ button:disabled {
   gap: 34px;
 }
 
+.us-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 24px;
+  align-items: start;
+}
+
+.us-col {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.us-col .action-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+}
+
 .thermo-factor-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -503,6 +522,10 @@ button:disabled {
 @media (max-width: 900px) {
   .thermo-factor-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .us-grid {
+    grid-template-columns: 1fr;
   }
 
   .download-row {
