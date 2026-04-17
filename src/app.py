@@ -1585,6 +1585,53 @@ def _write_csv(rows: list[list[object]], path: Path) -> None:
             writer.writerow([_cell_to_text(value) for value in row])
 
 
+def _load_existing_csv_rows(path: Path) -> list[list[str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as file_handle:
+        return [row for row in csv.reader(file_handle) if row]
+
+
+def _merge_preserved_thermometer_history(
+    output_path: Path,
+    new_rows: list[list[object]],
+) -> tuple[list[list[object]], dt.date, int]:
+    if len(new_rows) <= 1:
+        raise ValueError("市场温度计结果为空")
+
+    new_header = [str(cell) for cell in new_rows[0]]
+    new_start_date = dt.date.fromisoformat(str(new_rows[1][0]))
+    existing_rows = _load_existing_csv_rows(output_path)
+    if len(existing_rows) <= 1:
+        return new_rows, new_start_date, 0
+
+    existing_header = [str(cell) for cell in existing_rows[0]]
+    if existing_header != new_header:
+        return new_rows, new_start_date, 0
+
+    preserved_rows: list[list[object]] = []
+    for row in existing_rows[1:]:
+        if not row:
+            continue
+        try:
+            row_date = dt.date.fromisoformat(str(row[0]).strip())
+        except Exception:
+            continue
+        if row_date >= new_start_date:
+            continue
+        normalized = list(row[: len(new_header)])
+        if len(normalized) < len(new_header):
+            normalized.extend([""] * (len(new_header) - len(normalized)))
+        preserved_rows.append(normalized)
+
+    if not preserved_rows:
+        return new_rows, new_start_date, 0
+
+    merged_rows = [new_rows[0], *preserved_rows, *new_rows[1:]]
+    output_start_date = dt.date.fromisoformat(str(preserved_rows[0][0]).strip())
+    return merged_rows, output_start_date, len(preserved_rows)
+
+
 def _filter_columns(rows: list[list[object]], drop_names: set[str]) -> list[list[object]]:
     if not rows or not drop_names:
         return rows
@@ -2813,15 +2860,18 @@ def generate_thermometer_merge() -> object:
 
         output_name = "Market_Thermometer.csv"
         output_path = OUTPUT_DIR / output_name
-        _write_csv(rows, output_path)
+        output_rows, output_date_begin, preserved_history_rows = _merge_preserved_thermometer_history(output_path, rows)
+        _write_csv(output_rows, output_path)
         remote_url = _publish_csv_to_cos(output_path, output_name)
         return jsonify(
             {
                 "output_csv": output_name,
                 "date_begin": date_begin.isoformat(),
                 "date_begin_used": start_date_used.isoformat(),
+                "date_begin_output": output_date_begin.isoformat(),
                 "date_end": date_end.isoformat(),
                 "columns": header,
+                "preserved_history_rows": preserved_history_rows,
                 "remote_url": remote_url,
             }
         )

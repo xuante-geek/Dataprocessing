@@ -938,8 +938,9 @@ const generateThermoMerge = async () => {
     const lines = [
       "已生成：",
       data.output_csv ? `- docs/data/${data.output_csv}` : null,
-      data.date_begin_used ? `起始日期：${data.date_begin_used}` : null,
+      (data.date_begin_output || data.date_begin_used) ? `起始日期：${data.date_begin_output || data.date_begin_used}` : null,
       data.date_end ? `结束日期：${data.date_end}` : null,
+      data.preserved_history_rows ? `保留历史行数：${data.preserved_history_rows}` : null,
     ].filter(Boolean);
     showModal("完成", lines.join("\n"));
   } catch (error) {
