@@ -1592,6 +1592,13 @@ def _load_existing_csv_rows(path: Path) -> list[list[str]]:
         return [row for row in csv.reader(file_handle) if row]
 
 
+def _normalize_thermometer_header(header: list[str]) -> list[str]:
+    rename_map = {
+        "股权风险溢价分位": "市场估值",
+    }
+    return [rename_map.get(str(cell), str(cell)) for cell in header]
+
+
 def _merge_preserved_thermometer_history(
     output_path: Path,
     new_rows: list[list[object]],
@@ -1606,7 +1613,7 @@ def _merge_preserved_thermometer_history(
         return new_rows, new_start_date, 0
 
     existing_header = [str(cell) for cell in existing_rows[0]]
-    if existing_header != new_header:
+    if _normalize_thermometer_header(existing_header) != _normalize_thermometer_header(new_header):
         return new_rows, new_start_date, 0
 
     preserved_rows: list[list[object]] = []
@@ -2792,7 +2799,7 @@ def generate_thermometer_merge() -> object:
         assert all(isinstance(d, dt.date) for d in erp_dates_only)
         erp_dates_only_typed: list[dt.date] = [d for d in erp_dates_only if isinstance(d, dt.date)]
 
-        header = ["日期", "股权风险溢价分位", "全A点位", "市场温度"]
+        header = ["日期", "市场估值", "全A点位", "市场温度"]
         if include_gdp:
             header.insert(1, "市值/GDP分位")
         if include_volume:
@@ -2810,7 +2817,7 @@ def generate_thermometer_merge() -> object:
             "市值/GDP分位",
             "成交量/市值分位",
             "融资融券/市值分位",
-            "股权风险溢价分位",
+            "市场估值",
             "市场温度",
             "全A点位",
         }
@@ -2844,7 +2851,7 @@ def generate_thermometer_merge() -> object:
                 "市值/GDP分位": gdp_pct,
                 "成交量/市值分位": vol_pct,
                 "融资融券/市值分位": sec_pct,
-                "股权风险溢价分位": erp_pct,
+                "市场估值": erp_pct,
                 "股权风险溢价": erp_value,
                 "十年国债收益率": yield_value,
                 "全A点位": close_value,
