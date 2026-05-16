@@ -2159,7 +2159,6 @@ def generate_erp_10year() -> object:
 def generate_erp_rolling() -> object:
     payload = request.get_json(silent=True) or {}
     n = payload.get("n")
-    include_yield = bool(payload.get("include_yield", True))
     include_pe = bool(payload.get("include_pe", True))
     include_erp_percentile = bool(payload.get("include_erp_percentile", True))
 
@@ -2185,8 +2184,6 @@ def generate_erp_rolling() -> object:
         bands_rows = _compute_erp_rolling_bands(erp_rows, window_size=n, include_percentile=include_erp_percentile)
 
         drop_names: set[str] = set()
-        if not include_yield:
-            drop_names.add("十年国债收益率")
         if not include_pe:
             drop_names.add("PE-TTM-S")
         if not include_erp_percentile:
@@ -2210,7 +2207,6 @@ def generate_erp_interval() -> object:
     payload = request.get_json(silent=True) or {}
     start_date_raw = payload.get("start_date")
     end_date_raw = payload.get("end_date")
-    include_yield = bool(payload.get("include_yield", True))
     include_pe = bool(payload.get("include_pe", True))
     include_erp_percentile = bool(payload.get("include_erp_percentile", True))
 
@@ -2247,8 +2243,6 @@ def generate_erp_interval() -> object:
         )
 
         drop_names: set[str] = set()
-        if not include_yield:
-            drop_names.add("十年国债收益率")
         if not include_pe:
             drop_names.add("PE-TTM-S")
         if not include_erp_percentile:
